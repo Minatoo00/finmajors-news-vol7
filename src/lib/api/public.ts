@@ -35,48 +35,41 @@ function parseTimestamp(value: string): Date | null {
   return date;
 }
 
-const isoTimestamp = z
-  .string()
-  .trim()
-  .min(1)
-  .transform((value, ctx) => {
-    const parsed = parseTimestamp(value);
-    if (!parsed) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Invalid ISO timestamp',
-      });
-      return z.NEVER;
-    }
-    return parsed;
-  });
+const optionalNonEmptyString = z.preprocess((value) => {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed === '' ? undefined : trimmed;
+}, z.string().min(1).optional());
 
-const articlesListQuerySchema = z
-  .object({
-    person: z
-      .string()
-      .trim()
-      .min(1)
-      .optional(),
-    from: isoTimestamp.optional(),
-    to: isoTimestamp.optional(),
-    media: z
-      .string()
-      .trim()
-      .min(1)
-      .optional(),
-    cursor: z
-      .string()
-      .trim()
-      .min(1)
-      .optional(),
-    limit: z.coerce.number().int().min(1).max(50).default(20),
-  })
-  .transform((value) => ({
-    ...value,
-    from: value.from ?? undefined,
-    to: value.to ?? undefined,
-  }));
+const optionalCursor = z.preprocess((value) => {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed === '' ? undefined : trimmed;
+}, z.string().min(1).optional());
+
+const optionalTimestamp = z.preprocess((value) => {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  return parseTimestamp(trimmed) ?? undefined;
+}, z.date().optional());
+
+const articlesListQuerySchema = z.object({
+  person: optionalNonEmptyString,
+  from: optionalTimestamp,
+  to: optionalTimestamp,
+  media: optionalNonEmptyString,
+  cursor: optionalCursor,
+  limit: z
+    .preprocess((value) => {
+      if (typeof value === 'string' && value.trim() === '') {
+        return undefined;
+      }
+      return value;
+    }, z.coerce.number().int().min(1).max(50).default(20)),
+});
 
 export type ParsedArticlesListQuery = Omit<ArticlesListQuery, 'from' | 'to' | 'limit'> & {
   from?: Date;

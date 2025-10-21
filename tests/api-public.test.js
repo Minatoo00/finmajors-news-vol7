@@ -33,14 +33,14 @@ test('parseArticlesListQuery coerces values and validates ISO dates', () => {
   assert.ok(parsed.to instanceof Date);
 });
 
-test('parseArticlesListQuery rejects invalid ISO timestamp', () => {
-  assert.throws(
-    () =>
-      parseArticlesListQuery({
-        from: 'invalid-date',
-      }),
-    /Invalid ISO timestamp/,
-  );
+test('parseArticlesListQuery ignores invalid ISO timestamp input', () => {
+  const parsed = parseArticlesListQuery({
+    from: 'invalid-date',
+    to: 'also-invalid',
+  });
+
+  assert.equal(parsed.from, undefined);
+  assert.equal(parsed.to, undefined);
 });
 
 test('cursor encoding and decoding round-trips', () => {
@@ -251,4 +251,3 @@ test('buildArticleDetailResponse maps summary and persons', async () => {
   assert.equal(result.summary?.text, 'Summary');
   assert.equal(result.persons[0].slug, 'jerome-h-powell');
 });
-

@@ -1,3 +1,5 @@
+import { PersonFilter } from './person-filter';
+
 interface NewsFiltersProps {
   persons: Array<{
     slug: string;
@@ -14,41 +16,52 @@ interface NewsFiltersProps {
     from?: string;
     to?: string;
   };
+  mediaOptions: string[];
 }
 
-export function NewsFilters({ persons, currentFilters }: NewsFiltersProps) {
+export function NewsFilters({ persons, currentFilters, mediaOptions }: NewsFiltersProps) {
+  const mediaSet = new Set(mediaOptions);
+  const normalizedMediaOptions =
+    currentFilters.media && !mediaSet.has(currentFilters.media)
+      ? [currentFilters.media, ...mediaOptions]
+      : mediaOptions;
+
   return (
     <form className="grid gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm lg:grid-cols-5" method="get">
       <label className="flex flex-col text-sm font-medium text-slate-700">
-        <span className="mb-1">人物</span>
-        <select
-          name="person"
-          defaultValue={currentFilters.person ?? ''}
-          className="rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-900"
+        <span
+          id="news-person-filter-label"
+          className="mb-1"
         >
-          <option value="">
-            すべての人物
-          </option>
-          {persons.map((person) => (
-            <option
-              key={person.slug}
-              value={person.slug}
-            >
-              {person.nameJp} / {person.institution.code}
-            </option>
-          ))}
-        </select>
+          人物
+        </span>
+        <PersonFilter
+          ariaLabelledBy="news-person-filter-label"
+          name="person"
+          persons={persons}
+          initialValue={currentFilters.person}
+        />
       </label>
 
       <label className="flex flex-col text-sm font-medium text-slate-700">
         <span className="mb-1">媒体ドメイン</span>
-        <input
-          type="text"
+        <select
           name="media"
-          placeholder="例: reuters.com"
           defaultValue={currentFilters.media ?? ''}
           className="rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-900"
-        />
+        >
+          <option value="">
+            すべての媒体
+          </option>
+          {normalizedMediaOptions.map((domain) => (
+            <option
+              key={domain}
+              value={domain}
+            >
+              {domain}
+            </option>
+          ))}
+        </select>
       </label>
 
       <label className="flex flex-col text-sm font-medium text-slate-700">

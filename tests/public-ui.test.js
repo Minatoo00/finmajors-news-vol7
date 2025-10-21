@@ -60,6 +60,7 @@ test('NewsFilters renders select options with current selection', () => {
           institution: { code: 'FRB', nameJp: '米連邦準備制度理事会', nameEn: 'FRB' },
         },
       ],
+      mediaOptions: ['bloomberg.com', 'reuters.com'],
       currentFilters: {
         person: 'jerome-h-powell',
         media: 'reuters.com',
@@ -69,8 +70,10 @@ test('NewsFilters renders select options with current selection', () => {
     }),
   );
 
-  assert.match(html, /name="person"/);
-  assert.match(html, /value="jerome-h-powell"/);
+  assert.match(html, /type="hidden" name="person" value="jerome-h-powell"/);
+  assert.match(html, /人物/);
+  assert.match(html, /ジェローム・パウエル \/ FRB/);
   assert.match(html, /name="media"/);
-  assert.match(html, /value="reuters\.com"/);
+  assert.match(html, /<option value="">すべての媒体<\/option>/);
+  assert.match(html, /<option value="reuters\.com" selected="">reuters\.com<\/option>/);
 });

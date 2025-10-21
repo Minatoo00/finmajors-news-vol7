@@ -17,10 +17,19 @@ function normalizeSearchParams(searchParams?: SearchParams): Record<string, stri
   for (const [key, value] of Object.entries(searchParams)) {
     if (Array.isArray(value)) {
       if (value.length > 0) {
-        result[key] = value[0];
+        const first = value[0];
+        if (typeof first === 'string') {
+          const trimmed = first.trim();
+          if (trimmed) {
+            result[key] = trimmed;
+          }
+        }
       }
     } else if (typeof value === 'string') {
-      result[key] = value;
+      const trimmed = value.trim();
+      if (trimmed) {
+        result[key] = trimmed;
+      }
     }
   }
   return result;
@@ -53,20 +62,23 @@ async function NewsListSection({
   paramsObject: Record<string, string>;
 }) {
   const prisma = getPrisma();
-  let query;
-  try {
-    query = parseArticlesListQuery(paramsObject);
-  } catch (error) {
-    return (
-      <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-600">
-        フィルター条件が正しくありません。日時は ISO 形式または YYYY-MM-DD で指定してください。
-      </div>
-    );
-  }
-  const [personsResponse, articlesResponse] = await Promise.all([
+  const [personsResponse, mediaRows] = await Promise.all([
     buildPersonsResponse(prisma),
-    buildArticlesListResponse(prisma, query),
+    prisma.article.findMany({
+      distinct: ['sourceDomain'],
+      select: { sourceDomain: true },
+      where: { sourceDomain: { not: '' } },
+      orderBy: { sourceDomain: 'asc' },
+    }),
   ]);
+
+  const mediaOptions = Array.from(
+    new Set(
+      mediaRows
+        .map((row) => row.sourceDomain?.trim())
+        .filter((domain): domain is string => Boolean(domain)),
+    ),
+  );
 
   const persons = personsResponse.items.map((person) => ({
     slug: person.slug,
@@ -77,6 +89,9 @@ async function NewsListSection({
       nameEn: person.institution.nameEn,
     },
   }));
+
+  const query = parseArticlesListQuery(paramsObject);
+  const articlesResponse = await buildArticlesListResponse(prisma, query);
 
   const articles = articlesResponse.items.map((article) => ({
     id: article.id.toString(),
@@ -106,6 +121,7 @@ async function NewsListSection({
           from: paramsObject.from,
           to: paramsObject.to,
         }}
+        mediaOptions={mediaOptions}
       />
       <NewsList
         articles={articles}
