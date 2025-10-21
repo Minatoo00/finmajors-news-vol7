@@ -180,9 +180,8 @@ export class PersistenceService {
   private async executeWithTransaction<T>(
     callback: (client: TransactionClient) => Promise<T>,
   ): Promise<T> {
-    const transaction = this.prisma.$transaction;
-    if (typeof transaction === 'function') {
-      return transaction(async (tx: Prisma.TransactionClient) =>
+    if (typeof this.prisma.$transaction === 'function') {
+      return this.prisma.$transaction(async (tx: Prisma.TransactionClient) =>
         callback(tx),
       );
     }
