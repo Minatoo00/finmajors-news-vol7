@@ -21,6 +21,41 @@ type PrismaPersonClient = Pick<
 
 type PublicPrisma = PrismaArticleClient & PrismaPersonClient;
 
+const articleSelect = {
+  id: true,
+  title: true,
+  urlOriginal: true,
+  sourceDomain: true,
+  imageUrl: true,
+  publishedAt: true,
+  summary: {
+    select: {
+      text: true,
+      createdAt: true,
+    },
+  },
+  persons: {
+    select: {
+      person: {
+        select: {
+          slug: true,
+          nameJp: true,
+          nameEn: true,
+          role: true,
+          active: true,
+          institution: {
+            select: {
+              code: true,
+              nameJp: true,
+              nameEn: true,
+            },
+          },
+        },
+      },
+    },
+  },
+} satisfies Prisma.ArticleSelect;
+
 function parseTimestamp(value: string): Date | null {
   if (!value) return null;
   const trimmed = value.trim();
@@ -113,18 +148,7 @@ export function decodeArticlesCursor(cursor: string): ArticlesCursorPayload {
 }
 
 type ArticleWithRelations = Prisma.ArticleGetPayload<{
-  include: {
-    summary: true;
-    persons: {
-      include: {
-        person: {
-          include: {
-            institution: true;
-          };
-        };
-      };
-    };
-  };
+  select: typeof articleSelect;
 }>;
 
 type PersonWithInstitution = Prisma.PersonGetPayload<{
@@ -254,45 +278,15 @@ export async function buildArticlesListResponse(
 
   const take = query.limit + 1;
 
-  const articles = (await prisma.article.findMany({
+  const articles = await prisma.article.findMany({
     where,
     orderBy: [
       { publishedAt: 'desc' },
       { id: 'desc' },
     ],
-    select: {
-      id: true,
-      title: true,
-      urlOriginal: true,
-      sourceDomain: true,
-      imageUrl: true,
-      publishedAt: true,
-      summary: {
-        select: {
-          text: true,
-        },
-      },
-      persons: {
-        select: {
-          person: {
-            select: {
-              slug: true,
-              nameJp: true,
-              nameEn: true,
-              institution: {
-                select: {
-                  code: true,
-                  nameJp: true,
-                  nameEn: true,
-                },
-              },
-            },
-          },
-        },
-      },
-    },
+    select: articleSelect,
     take,
-  } as Prisma.ArticleFindManyArgs)) as ArticleWithRelations[];
+  }) as ArticleWithRelations[];
 
   const hasMore = articles.length > query.limit;
   const sliced = hasMore ? articles.slice(0, query.limit) : articles;
@@ -321,40 +315,7 @@ export async function buildArticleDetailResponse(
 ): Promise<ArticleDetailResponse | null> {
   const article = (await prisma.article.findUnique({
     where: { id },
-    select: {
-      id: true,
-      title: true,
-      urlOriginal: true,
-      sourceDomain: true,
-      imageUrl: true,
-      publishedAt: true,
-      summary: {
-        select: {
-          text: true,
-          createdAt: true,
-        },
-      },
-      persons: {
-        select: {
-          person: {
-            select: {
-              slug: true,
-              nameJp: true,
-              nameEn: true,
-              role: true,
-              active: true,
-              institution: {
-                select: {
-                  code: true,
-                  nameJp: true,
-                  nameEn: true,
-                },
-              },
-            },
-          },
-        },
-      },
-    },
+    select: articleSelect,
   } as Prisma.ArticleFindUniqueArgs)) as ArticleWithRelations | null;
 
   if (!article) {

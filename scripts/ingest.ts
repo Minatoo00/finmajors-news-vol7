@@ -24,7 +24,7 @@ interface CreateIngestApplicationOptions {
   prisma?: PrismaClient;
   fetcher?: GoogleNewsRssFetcher;
   summaryService?: SummaryServiceImpl;
-  contentExtractor?: (url: string) => Promise<{ content?: string | null; text?: string | null; imageUrl?: string | null } | string | null>;
+  contentExtractor?: (url: string) => Promise<ExtractedContent | null | undefined>;
   logger?: IngestLogger;
   fetchImpl?: FetchFn;
 }
@@ -57,15 +57,15 @@ export function createHttpContentExtractor(timeoutMs: number, fetchImpl: FetchFn
       const html = await response.text();
       const extracted = await extractFromHtml(html, url).catch(() => null);
 
-      const text = extracted?.content ?? extracted?.text ?? null;
-      const cleaned = typeof text === 'string'
-        ? text.replace(/\s+/g, ' ').trim().slice(0, 10_000)
+      const rawContent = extracted?.content ?? extracted?.description ?? null;
+      const cleaned = typeof rawContent === 'string'
+        ? rawContent.replace(/\s+/g, ' ').trim().slice(0, 10_000)
         : null;
 
       return {
         content: cleaned && cleaned.length > 0 ? cleaned : null,
         text: cleaned && cleaned.length > 0 ? cleaned : null,
-        imageUrl: extracted?.image ?? null,
+        imageUrl: extracted?.image ?? extracted?.favicon ?? null,
       };
     } catch (error) {
       console.error(

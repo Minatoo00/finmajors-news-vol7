@@ -37,8 +37,6 @@ CREATE TABLE "article" (
     "url_normalized" TEXT NOT NULL,
     "source_domain" TEXT NOT NULL,
     "title" TEXT NOT NULL,
-    "description" TEXT,
-    "image_url" TEXT,
     "published_at" TIMESTAMPTZ(6),
     "fetched_at" TIMESTAMPTZ(6) NOT NULL,
     "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
