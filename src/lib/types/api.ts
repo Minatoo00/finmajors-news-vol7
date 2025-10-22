@@ -41,6 +41,7 @@ export interface ArticleListItem {
   title: string;
   url: string;
   sourceDomain: string;
+  imageUrl?: string | null;
   publishedAt?: string | null;
   summary: Pick<ArticleSummary, 'text'>;
   persons: ArticleListPerson[];
@@ -61,6 +62,7 @@ export interface ArticleDetailResponse {
   title: string;
   url: string;
   sourceDomain: string;
+  imageUrl?: string | null;
   publishedAt?: string | null;
   summary: ArticleSummaryDetail | null;
   persons: PersonResponseItem[];

@@ -182,11 +182,16 @@ export class GoogleNewsRssFetcher implements RssFetcher {
           ? item.description
           : null;
 
+      const enclosure = item?.enclosure;
+      const mediaContent = item?.['media:content'] ?? item?.['media:thumbnail'];
+      const imageUrlCandidate = this.extractImageUrl(enclosure, mediaContent);
+
       results.push({
         url: link,
         sourceDomain,
         title: typeof item?.title === 'string' ? item.title : link,
         description,
+        imageUrl: imageUrlCandidate,
         publishedAt,
         fetchedAt: now,
         raw: item,
@@ -213,4 +218,57 @@ export class GoogleNewsRssFetcher implements RssFetcher {
     }
     return date;
   }
+
+  private extractImageUrl(
+    enclosure: unknown,
+    mediaContent: unknown,
+  ): string | null {
+    const parsedEnclosure = normaliseMediaValue<RssEnclosure>(enclosure as PossiblyArray<RssEnclosure>);
+    const parsedMediaContent = normaliseMediaValue<RssMediaContent>(mediaContent as PossiblyArray<RssMediaContent>);
+
+    return selectImageUrl(parsedEnclosure, parsedMediaContent);
+  }
+}
+
+type RssEnclosure = {
+  '@_url'?: string;
+  '@_type'?: string;
+};
+
+type RssMediaContent = {
+  '@_url'?: string;
+  '@_type'?: string;
+};
+
+type PossiblyArray<T> = T | T[] | undefined;
+
+function normaliseMediaValue<T>(value: PossiblyArray<T>): T | null {
+  if (!value) {
+    return null;
+  }
+  return Array.isArray(value) ? value[0] ?? null : value;
+}
+
+function isImageMime(type?: string): boolean {
+  if (!type) {
+    return false;
+  }
+  return type.startsWith('image/');
+}
+
+function selectImageUrl(
+  enclosure: RssEnclosure | null,
+  mediaContent: RssMediaContent | null,
+): string | null {
+  if (enclosure?.['@_url'] && isImageMime(enclosure['@_type'])) {
+    return enclosure['@_url'];
+  }
+
+  if (mediaContent?.['@_url']) {
+    if (!mediaContent['@_type'] || isImageMime(mediaContent['@_type'])) {
+      return mediaContent['@_url'];
+    }
+  }
+
+  return null;
 }

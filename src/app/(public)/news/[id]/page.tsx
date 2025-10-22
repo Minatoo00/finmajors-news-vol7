@@ -34,7 +34,7 @@ export default async function NewsDetailPage({ params }: PageProps) {
         ← ニュース一覧に戻る
       </Link>
 
-      <article className="space-y-4">
+      <article className="space-y-6">
         <header className="space-y-2">
           <p className="text-xs uppercase tracking-wide text-slate-500">
             {detail.sourceDomain}
@@ -42,6 +42,17 @@ export default async function NewsDetailPage({ params }: PageProps) {
           <h1 className="text-2xl font-bold text-slate-900">{detail.title}</h1>
           <p className="text-sm text-slate-600">{timestamp}</p>
         </header>
+
+        {detail.imageUrl && (
+          <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+            <img
+              src={detail.imageUrl}
+              alt=""
+              loading="lazy"
+              className="h-auto w-full object-cover"
+            />
+          </div>
+        )}
 
         {detail.summary ? (
           <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">

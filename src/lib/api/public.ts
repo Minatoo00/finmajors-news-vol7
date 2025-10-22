@@ -198,6 +198,7 @@ function mapArticleToListItem(article: ArticleWithRelations): ArticleListItem {
     title: article.title,
     url: article.urlOriginal,
     sourceDomain: article.sourceDomain,
+    imageUrl: article.imageUrl ?? null,
     publishedAt: article.publishedAt
       ? article.publishedAt.toISOString()
       : null,
@@ -259,12 +260,33 @@ export async function buildArticlesListResponse(
       { publishedAt: 'desc' },
       { id: 'desc' },
     ],
-    include: {
-      summary: true,
+    select: {
+      id: true,
+      title: true,
+      urlOriginal: true,
+      sourceDomain: true,
+      imageUrl: true,
+      publishedAt: true,
+      summary: {
+        select: {
+          text: true,
+        },
+      },
       persons: {
-        include: {
+        select: {
           person: {
-            include: { institution: true },
+            select: {
+              slug: true,
+              nameJp: true,
+              nameEn: true,
+              institution: {
+                select: {
+                  code: true,
+                  nameJp: true,
+                  nameEn: true,
+                },
+              },
+            },
           },
         },
       },
@@ -299,12 +321,36 @@ export async function buildArticleDetailResponse(
 ): Promise<ArticleDetailResponse | null> {
   const article = (await prisma.article.findUnique({
     where: { id },
-    include: {
-      summary: true,
+    select: {
+      id: true,
+      title: true,
+      urlOriginal: true,
+      sourceDomain: true,
+      imageUrl: true,
+      publishedAt: true,
+      summary: {
+        select: {
+          text: true,
+          createdAt: true,
+        },
+      },
       persons: {
-        include: {
+        select: {
           person: {
-            include: { institution: true },
+            select: {
+              slug: true,
+              nameJp: true,
+              nameEn: true,
+              role: true,
+              active: true,
+              institution: {
+                select: {
+                  code: true,
+                  nameJp: true,
+                  nameEn: true,
+                },
+              },
+            },
           },
         },
       },
@@ -320,6 +366,7 @@ export async function buildArticleDetailResponse(
     title: article.title,
     url: article.urlOriginal,
     sourceDomain: article.sourceDomain,
+    imageUrl: article.imageUrl ?? null,
     publishedAt: article.publishedAt ? article.publishedAt.toISOString() : null,
     summary: article.summary
       ? {

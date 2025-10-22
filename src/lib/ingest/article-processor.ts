@@ -9,10 +9,10 @@ import type {
 } from './types';
 
 type ContentExtractorResult =
-  | string
   | {
       content?: string | null;
       text?: string | null;
+      imageUrl?: string | null;
     }
   | null
   | undefined;
@@ -69,6 +69,7 @@ export class ArticleProcessorImpl implements ArticleProcessor {
   ): Promise<SaveArticleInput | null> {
     const articleContent = await this.contentExtractor(candidate.url);
     const text = this.extractText(articleContent) ?? candidate.description ?? '';
+    const imageUrl = this.extractImageUrl(articleContent) ?? candidate.imageUrl ?? null;
 
     if (!text || text.trim().length === 0) {
       this.logger.info('ingest.article.skipped', {
@@ -129,6 +130,7 @@ export class ArticleProcessorImpl implements ArticleProcessor {
       sourceDomain: candidate.sourceDomain,
       title: candidate.title,
       description: candidate.description,
+      imageUrl,
       publishedAt: candidate.publishedAt,
       fetchedAt,
       persons: [
@@ -156,6 +158,22 @@ export class ArticleProcessorImpl implements ArticleProcessor {
 
     if (typeof result.text === 'string') {
       return result.text;
+    }
+
+    return null;
+  }
+
+  private extractImageUrl(result: ContentExtractorResult): string | null {
+    if (!result) {
+      return null;
+    }
+
+    if (typeof result === 'string' && result.trim().length > 0) {
+      return result.trim();
+    }
+
+    if (typeof result.imageUrl === 'string' && result.imageUrl.trim().length > 0) {
+      return result.imageUrl.trim();
     }
 
     return null;

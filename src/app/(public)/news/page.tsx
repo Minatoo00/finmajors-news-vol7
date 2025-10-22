@@ -98,6 +98,7 @@ async function NewsListSection({
     title: article.title,
     url: article.url,
     sourceDomain: article.sourceDomain,
+    imageUrl: article.imageUrl ?? null,
     publishedAt: article.publishedAt ?? null,
     summary: article.summary,
     persons: article.persons.map((person) => ({

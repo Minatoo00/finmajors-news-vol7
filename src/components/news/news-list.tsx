@@ -17,6 +17,7 @@ interface NewsArticle {
   title: string;
   url: string;
   sourceDomain: string;
+  imageUrl?: string | null;
   publishedAt: string | null;
   summary: {
     text: string;
@@ -34,51 +35,74 @@ function ArticleCard({ article }: { article: NewsArticle }) {
   const timestamp = formatJstDateTime(article.publishedAt);
 
   return (
-    <article className="flex h-full flex-col rounded-lg border border-slate-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-2">
-          <h2 className="text-lg font-semibold text-slate-900">
-            <Link href={`/news/${article.id}`} className="hover:underline">
-              {article.title}
-            </Link>
-          </h2>
-          <p className="text-sm text-slate-500">
-            {timestamp}
-            {' · '}
-            <span className="uppercase tracking-wide">{article.sourceDomain}</span>
-          </p>
+    <article className="flex h-full flex-col rounded-lg border border-slate-200 bg-white shadow-sm transition-shadow hover:shadow-md">
+      {article.imageUrl ? (
+        <div className="relative h-44 w-full overflow-hidden rounded-t-lg bg-slate-100">
+          <img
+            src={article.imageUrl}
+            alt=""
+            loading="lazy"
+            className="h-full w-full object-cover"
+          />
         </div>
-        <a
-          href={article.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-sm font-medium text-indigo-600 hover:text-indigo-500"
-        >
-          元記事を開く
-        </a>
-      </div>
-
-      <p className="mt-4 flex-1 text-base leading-relaxed text-slate-700">
-        {article.summary.text || '要約は準備中です。'}
-      </p>
-
-      {article.persons.length > 0 ? (
-        <ul className="mt-4 flex flex-wrap gap-2 text-sm text-slate-600">
-          {article.persons.map((person) => (
-            <li
-              key={`${article.id}-${person.slug}`}
-              className="rounded-full bg-slate-100 px-3 py-1"
-            >
-              {person.nameJp}
-              {'（'}
-              {person.institution.nameJp}
-              {'）'}
-            </li>
-          ))}
-        </ul>
       ) : (
-        <p className="mt-4 text-sm text-slate-500">関連人物は特定されませんでした。</p>
+        <div className="h-2 rounded-t-lg bg-slate-200" />
       )}
+
+      <div className="flex flex-1 flex-col p-5">
+        <dl className="flex flex-col gap-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+          <div>
+            <dt className="sr-only">メディア</dt>
+            <dd>{article.sourceDomain}</dd>
+          </div>
+          {timestamp && (
+            <div className="text-slate-400">
+              <dt className="sr-only">配信日時</dt>
+              <dd>{timestamp}</dd>
+            </div>
+          )}
+        </dl>
+
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-2">
+            <h2 className="text-lg font-semibold text-slate-900">
+              <Link href={`/news/${article.id}`} className="hover:underline">
+                {article.title}
+              </Link>
+            </h2>
+          </div>
+          <a
+            href={article.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm font-medium text-indigo-600 hover:text-indigo-500"
+          >
+            元記事を開く
+          </a>
+        </div>
+
+        <p className="mt-4 flex-1 text-base leading-relaxed text-slate-700">
+          {article.summary.text || '要約は準備中です。'}
+        </p>
+
+        {article.persons.length > 0 ? (
+          <ul className="mt-4 flex flex-wrap gap-2 text-sm text-slate-600">
+            {article.persons.map((person) => (
+              <li
+                key={`${article.id}-${person.slug}`}
+                className="rounded-full bg-slate-100 px-3 py-1"
+              >
+                {person.nameJp}
+                {'（'}
+                {person.institution.nameJp}
+                {'）'}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-4 text-sm text-slate-500">関連人物は特定されませんでした。</p>
+        )}
+      </div>
     </article>
   );
 }

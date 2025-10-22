@@ -7,6 +7,7 @@ import { PersistenceService } from '../src/lib/persistence/service';
 import { getPrisma } from '../src/lib/prisma';
 import { getEnv, type AppEnv } from '../src/lib/env';
 import type { IngestLogger } from '../src/lib/ingest/types';
+import { extractFromHtml } from '@extractus/article-extractor';
 import type { PrismaClient } from '@prisma/client';
 
 type FetchFn = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -23,14 +24,20 @@ interface CreateIngestApplicationOptions {
   prisma?: PrismaClient;
   fetcher?: GoogleNewsRssFetcher;
   summaryService?: SummaryServiceImpl;
-  contentExtractor?: (url: string) => Promise<string | null>;
+  contentExtractor?: (url: string) => Promise<{ content?: string | null; text?: string | null; imageUrl?: string | null } | string | null>;
   logger?: IngestLogger;
   fetchImpl?: FetchFn;
 }
 
+type ExtractedContent = {
+  content?: string | null;
+  text?: string | null;
+  imageUrl?: string | null;
+};
+
 export function createHttpContentExtractor(timeoutMs: number, fetchImpl: FetchFn = globalThis.fetch.bind(globalThis)) {
   const maxDuration = Math.max(5_000, Math.min(timeoutMs, 15_000));
-  return async (url: string): Promise<string | null> => {
+  return async (url: string): Promise<ExtractedContent | null> => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), maxDuration).unref?.() ?? null;
 
@@ -48,18 +55,18 @@ export function createHttpContentExtractor(timeoutMs: number, fetchImpl: FetchFn
       }
 
       const html = await response.text();
-      const cleaned = html
-        .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-        .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-        .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
-        .replace(/<[^>]+>/g, ' ')
-        .replace(/&nbsp;/gi, ' ');
+      const extracted = await extractFromHtml(html, url).catch(() => null);
 
-      const normalized = cleaned.replace(/\s+/g, ' ').trim();
-      if (normalized.length === 0) {
-        return null;
-      }
-      return normalized.slice(0, 10_000);
+      const text = extracted?.content ?? extracted?.text ?? null;
+      const cleaned = typeof text === 'string'
+        ? text.replace(/\s+/g, ' ').trim().slice(0, 10_000)
+        : null;
+
+      return {
+        content: cleaned && cleaned.length > 0 ? cleaned : null,
+        text: cleaned && cleaned.length > 0 ? cleaned : null,
+        imageUrl: extracted?.image ?? null,
+      };
     } catch (error) {
       console.error(
         JSON.stringify({

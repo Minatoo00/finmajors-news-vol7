@@ -6,6 +6,7 @@ export interface RssArticleCandidate {
   sourceDomain: string;
   title: string;
   description: string | null;
+  imageUrl?: string | null;
   publishedAt: Date | null;
   fetchedAt: Date;
   raw?: unknown;
