@@ -1,3 +1,4 @@
+import Image from 'next/image';
 import Link from 'next/link';
 
 import { formatJstDateTime } from '../../lib/formatting/time';
@@ -38,11 +39,14 @@ function ArticleCard({ article }: { article: NewsArticle }) {
     <article className="flex h-full flex-col rounded-lg border border-slate-200 bg-white shadow-sm transition-shadow hover:shadow-md">
       {article.imageUrl ? (
         <div className="relative h-44 w-full overflow-hidden rounded-t-lg bg-slate-100">
-          <img
+          <Image
             src={article.imageUrl}
-            alt=""
-            loading="lazy"
-            className="h-full w-full object-cover"
+            alt={article.title}
+            fill
+            className="object-cover"
+            sizes="(min-width: 1280px) 360px, (min-width: 768px) 320px, 100vw"
+            priority={false}
+            unoptimized
           />
         </div>
       ) : (
