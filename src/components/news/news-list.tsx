@@ -34,7 +34,7 @@ function ArticleCard({ article }: { article: NewsArticle }) {
   const timestamp = formatJstDateTime(article.publishedAt);
 
   return (
-    <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md">
+    <article className="flex h-full flex-col rounded-lg border border-slate-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-2">
           <h2 className="text-lg font-semibold text-slate-900">
@@ -58,7 +58,7 @@ function ArticleCard({ article }: { article: NewsArticle }) {
         </a>
       </div>
 
-      <p className="mt-4 text-base leading-relaxed text-slate-700">
+      <p className="mt-4 flex-1 text-base leading-relaxed text-slate-700">
         {article.summary.text || '要約は準備中です。'}
       </p>
 
@@ -102,11 +102,15 @@ function buildCursorHref(
 
 export function NewsList({ articles, nextCursor, searchParams }: NewsListProps) {
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {articles.length === 0 ? (
         <p className="text-sm text-slate-500">該当するニュースが見つかりませんでした。</p>
       ) : (
-        articles.map((article) => <ArticleCard key={article.id} article={article} />)
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+          {articles.map((article) => (
+            <ArticleCard key={article.id} article={article} />
+          ))}
+        </div>
       )}
 
       {nextCursor && (
