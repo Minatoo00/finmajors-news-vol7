@@ -244,7 +244,7 @@ export class ArticleProcessorImpl implements ArticleProcessor {
       return false;
     }
     const tokens = trimmed
-      .split(/[\p{Punct}\s]+/u)
+      .split(/[\p{P}\s]+/u)
       .map((token) => this.normalizeForComparison(token))
       .filter((token) => token.length > 1);
     const uniqueTokens = new Set(tokens);

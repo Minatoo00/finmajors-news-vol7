@@ -22,7 +22,7 @@
    | `INGEST_CRON` | 内部 Cron のスケジュール式（既定: `5 * * * *`） |
 | `INGEST_CONCURRENCY` / `INGEST_RETRY_LIMIT` / `INGEST_TIMEOUT_MS` | 収集ジョブの並列数・リトライ・タイムアウト設定 |
 | `INGEST_JOB_TIMEOUT_MS` | ジョブ全体のタイムアウト（ミリ秒） |
-| `INGEST_MAX_ARTICLES_PER_PERSON` | 一人の要人あたり保存する記事数の上限（既定: 10件） |
+| `INGEST_MAX_ARTICLES_PER_PERSON` | 一人の要人あたり保存する記事数の上限（既定: 8件） |
 | `BASIC_AUTH_USER` / `BASIC_AUTH_PASS` | 管理 UI / 管理 API の Basic 認証情報 |
 | `ALLOWED_ADMIN_IPS` | 管理 UI / API にアクセス可能な IP のカンマ区切りリスト（未設定の場合は制限なし） |
 

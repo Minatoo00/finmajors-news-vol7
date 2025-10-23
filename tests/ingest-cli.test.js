@@ -24,7 +24,7 @@ test('createIngestApplication runs ingest job once with stub dependencies', asyn
     INGEST_RETRY_LIMIT: 0,
     INGEST_TIMEOUT_MS: 500,
     INGEST_JOB_TIMEOUT_MS: 1000,
-    INGEST_MAX_ARTICLES_PER_PERSON: 10,
+    INGEST_MAX_ARTICLES_PER_PERSON: 8,
     BASIC_AUTH_USER: 'admin',
     BASIC_AUTH_PASS: 'secret',
     ALLOWED_ADMIN_IPS: [],

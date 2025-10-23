@@ -51,7 +51,7 @@ export const envSchema = z.object({
     .int()
     .min(1)
     .max(100)
-    .default(10),
+    .default(8),
   BASIC_AUTH_USER: z.string().min(1, 'BASIC_AUTH_USER is required'),
   BASIC_AUTH_PASS: z.string().min(1, 'BASIC_AUTH_PASS is required'),
   ALLOWED_ADMIN_IPS: z

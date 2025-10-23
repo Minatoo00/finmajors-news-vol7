@@ -23,7 +23,7 @@ const baseEnv = {
   INGEST_RETRY_LIMIT: 1,
   INGEST_TIMEOUT_MS: 10000,
   INGEST_JOB_TIMEOUT_MS: 480000,
-  INGEST_MAX_ARTICLES_PER_PERSON: 10,
+  INGEST_MAX_ARTICLES_PER_PERSON: 8,
   BASIC_AUTH_USER: 'user',
   BASIC_AUTH_PASS: 'pass',
   ALLOWED_ADMIN_IPS: [],
@@ -260,7 +260,7 @@ test('job runner respects per-person article limit', async () => {
     processor,
     env: {
       ...baseEnv,
-      INGEST_MAX_ARTICLES_PER_PERSON: 10,
+      INGEST_MAX_ARTICLES_PER_PERSON: 8,
     },
   });
 
