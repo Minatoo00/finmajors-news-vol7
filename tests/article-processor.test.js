@@ -178,7 +178,10 @@ test('ArticleProcessor skips short content with insufficient unique tokens', asy
 
 test('ArticleProcessor throws when summary generation returns empty', async () => {
   const processor = new ArticleProcessorImpl({
-    contentExtractor: async () => ({ content: '本文テキスト' }),
+    contentExtractor: async () => ({
+      content:
+        'ジョン・ドウは市場の先行きについて詳細に説明し、ジョン・ドウ自身の見解を繰り返し述べた長文レポートです。金融政策、流動性、信用、金利、リスク、成長、インフレ、雇用、為替、資産、規制、テクノロジーの各テーマと市場参加者の反応について幅広く語りました。John Doe also discussed policy outlook, market stability, liquidity conditions, inflation trajectory, employment trends, currency signals, asset valuations, technology shifts, and regulatory priorities in depth.',
+    }),
     resolveUrl: async (url) => ({ url, method: 'fallback' }),
     summaryService: {
       generateSummary: async () => null,
@@ -203,7 +206,7 @@ test('ArticleProcessor throws when summary generation returns empty', async () =
         entry,
         {
           person: entry,
-          env: { OPENAI_MODEL: 'gpt-4o-mini' },
+          env: { OPENAI_MODEL: 'gpt-4o-mini', INGEST_MAX_ARTICLES_PER_PERSON: 8 },
         },
       ),
     SummaryGenerationError,

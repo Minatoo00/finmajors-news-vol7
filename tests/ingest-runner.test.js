@@ -266,9 +266,9 @@ test('job runner respects per-person article limit', async () => {
 
   const result = await runner.run();
 
-  assert.equal(processedUrls.length, 10);
+  assert.equal(processedUrls.length, 8);
   assert.ok(processedUrls.every((url) => url.startsWith('https://news.example.com/item-')));
-  assert.equal(result.stats.inserted, 10);
+  assert.equal(result.stats.inserted, 8);
 });
 
 test('job runner respects concurrency limit', async () => {

@@ -24,6 +24,8 @@ const defaultLogger: IngestLogger = {
   },
 };
 
+const ARTICLE_PROCESS_CONCURRENCY = 2;
+
 function formatMeta(meta?: Record<string, unknown>) {
   if (!meta) {
     return {};
@@ -147,11 +149,11 @@ export class IngestJobRunner {
       env: this.env,
     };
 
-    for (const candidate of articles) {
+    await runWithConcurrency(articles, ARTICLE_PROCESS_CONCURRENCY, async (candidate) => {
       try {
         const saveInput = await this.processor.process(candidate, entry, processContext);
         if (!saveInput) {
-          continue;
+          return;
         }
         const outcome = await this.persistence.saveArticleResult(saveInput);
         if (outcome.status === 'duplicate') {
@@ -166,7 +168,7 @@ export class IngestJobRunner {
           url: candidate.url,
         });
       }
-    }
+    });
   }
 
   private async executeWithRetry<T>(fn: () => Promise<T>, retries: number): Promise<T> {
