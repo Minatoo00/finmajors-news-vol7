@@ -11,6 +11,19 @@ interface SummaryServiceOptions {
   requestTimeoutMs?: number;
 }
 
+interface OpenAITextContent {
+  text?: { value?: string | null | undefined } | string | null | undefined;
+}
+
+interface OpenAIOutputItem {
+  content?: OpenAITextContent[] | null | undefined;
+}
+
+interface OpenAIResponsePayload {
+  output?: OpenAIOutputItem[] | null | undefined;
+  output_text?: string | null | undefined;
+}
+
 const defaultLogger: IngestLogger = {
   info() {},
   error(message, meta) {
@@ -132,7 +145,7 @@ export class SummaryServiceImpl implements SummaryService {
         return null;
       }
 
-      const data = await response.json();
+      const data = (await response.json()) as OpenAIResponsePayload;
       return this.extractText(data);
     } finally {
       if (timer) {
@@ -141,14 +154,26 @@ export class SummaryServiceImpl implements SummaryService {
     }
   }
 
-  private extractText(data: any): string | null {
+  private extractText(data: OpenAIResponsePayload): string | null {
     const outputs = Array.isArray(data?.output) ? data.output : [];
     for (const output of outputs) {
       const contents = Array.isArray(output?.content) ? output.content : [];
       for (const content of contents) {
-        const text = content?.text?.value ?? content?.text;
-        if (typeof text === 'string' && text.trim().length > 0) {
-          return text.trim();
+        const baseText = content?.text;
+        if (typeof baseText === 'string') {
+          const trimmed = baseText.trim();
+          if (trimmed.length > 0) {
+            return trimmed;
+          }
+          continue;
+        }
+
+        const nestedValue = baseText?.value;
+        if (typeof nestedValue === 'string') {
+          const trimmed = nestedValue.trim();
+          if (trimmed.length > 0) {
+            return trimmed;
+          }
         }
       }
     }

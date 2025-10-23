@@ -9,6 +9,7 @@ import type {
 } from './types';
 
 type ContentExtractorResult =
+  | string
   | {
       content?: string | null;
       text?: string | null;
@@ -67,6 +68,7 @@ export class ArticleProcessorImpl implements ArticleProcessor {
     person: PersonDictionaryEntry,
     context: ProcessContext,
   ): Promise<SaveArticleInput | null> {
+    const { env } = context;
     const articleContent = await this.contentExtractor(candidate.url);
     const text = this.extractText(articleContent) ?? candidate.description ?? '';
     const imageUrl = this.extractImageUrl(articleContent) ?? candidate.imageUrl ?? null;
@@ -76,6 +78,7 @@ export class ArticleProcessorImpl implements ArticleProcessor {
         slug: person.person.slug,
         reason: 'empty_content',
         url: candidate.url,
+        environment: env.NODE_ENV,
       });
       return null;
     }
@@ -106,6 +109,7 @@ export class ArticleProcessorImpl implements ArticleProcessor {
         url: candidate.url,
         error: ingestError.message,
         stack: ingestError.stack,
+        environment: env.NODE_ENV,
       });
       throw ingestError;
     }
@@ -119,6 +123,7 @@ export class ArticleProcessorImpl implements ArticleProcessor {
         slug: person.person.slug,
         url: candidate.url,
         error: emptyError.message,
+        environment: env.NODE_ENV,
       });
       throw emptyError;
     }
@@ -168,12 +173,17 @@ export class ArticleProcessorImpl implements ArticleProcessor {
       return null;
     }
 
-    if (typeof result === 'string' && result.trim().length > 0) {
-      return result.trim();
+    if (typeof result === 'string') {
+      const trimmed = result.trim();
+      return trimmed.length > 0 ? trimmed : null;
     }
 
-    if (typeof result.imageUrl === 'string' && result.imageUrl.trim().length > 0) {
-      return result.imageUrl.trim();
+    const imageUrl = result?.imageUrl;
+    if (typeof imageUrl === 'string') {
+      const trimmed = imageUrl.trim();
+      if (trimmed.length > 0) {
+        return trimmed;
+      }
     }
 
     return null;

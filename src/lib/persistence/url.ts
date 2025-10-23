@@ -5,7 +5,9 @@ export function normalizeUrl(input: string): string {
   try {
     url = new URL(input);
   } catch (error) {
-    throw new Error(`Invalid URL provided for normalization: ${input}`);
+    throw new Error(`Invalid URL provided for normalization: ${input}`, {
+      cause: error instanceof Error ? error : undefined,
+    });
   }
 
   url.hash = '';

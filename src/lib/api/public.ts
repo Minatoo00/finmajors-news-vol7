@@ -1,4 +1,5 @@
-import type { Prisma, PrismaClient } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import type { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import type {
   ArticleDetailResponse,
@@ -18,8 +19,6 @@ type PrismaPersonClient = Pick<
   PrismaClient,
   'person'
 >;
-
-type PublicPrisma = PrismaArticleClient & PrismaPersonClient;
 
 const articleSelect = {
   id: true,
@@ -55,6 +54,10 @@ const articleSelect = {
     },
   },
 } satisfies Prisma.ArticleSelect;
+
+const articleDefaultArgs = Prisma.validator<Prisma.ArticleDefaultArgs>()({
+  select: articleSelect,
+});
 
 function parseTimestamp(value: string): Date | null {
   if (!value) return null;
@@ -147,9 +150,7 @@ export function decodeArticlesCursor(cursor: string): ArticlesCursorPayload {
   };
 }
 
-type ArticleWithRelations = Prisma.ArticleGetPayload<{
-  select: typeof articleSelect;
-}>;
+type ArticleWithRelations = Prisma.ArticleGetPayload<typeof articleDefaultArgs>;
 
 type PersonWithInstitution = Prisma.PersonGetPayload<{
   include: {
@@ -279,12 +280,12 @@ export async function buildArticlesListResponse(
   const take = query.limit + 1;
 
   const articles = await prisma.article.findMany({
+    ...articleDefaultArgs,
     where,
     orderBy: [
       { publishedAt: 'desc' },
       { id: 'desc' },
     ],
-    select: articleSelect,
     take,
   }) as ArticleWithRelations[];
 
@@ -314,8 +315,8 @@ export async function buildArticleDetailResponse(
   id: bigint,
 ): Promise<ArticleDetailResponse | null> {
   const article = (await prisma.article.findUnique({
+    ...articleDefaultArgs,
     where: { id },
-    select: articleSelect,
   } as Prisma.ArticleFindUniqueArgs)) as ArticleWithRelations | null;
 
   if (!article) {

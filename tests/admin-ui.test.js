@@ -13,6 +13,8 @@ const { renderToStaticMarkup } = require('react-dom/server');
 
 const { AdminPersonsTable } = require('../src/components/admin/persons-table');
 
+const AdminPersonsPage = require('../src/app/(admin)/admin/persons/page.tsx').default;
+
 test('AdminPersonsTable renders rows with aliases and status badge', () => {
   const html = renderToStaticMarkup(
     React.createElement(AdminPersonsTable, {
@@ -45,4 +47,41 @@ test('AdminPersonsTable renders rows with aliases and status badge', () => {
   assert.match(html, /Powell, パウエル議長/);
   assert.match(html, /retired-member/);
   assert.match(html, /非アクティブ/);
+});
+
+test('AdminPersonsPage update form renders radio group for active status', async () => {
+  const prismaMock = {
+    person: {
+      findMany: async () => [
+        {
+          id: BigInt(1),
+          slug: 'sample-person',
+          nameJp: 'サンプル人物',
+          nameEn: 'Sample Person',
+          role: '役職',
+          active: true,
+          aliases: [],
+          institution: {
+            code: 'FRB',
+            nameJp: '米連邦準備制度理事会',
+            nameEn: 'FRB',
+          },
+        },
+      ],
+    },
+  };
+
+  const originalGetPrisma = require('../src/lib/prisma').getPrisma;
+  require('../src/lib/prisma').getPrisma = () => prismaMock;
+
+  try {
+    const page = await AdminPersonsPage();
+    const html = renderToStaticMarkup(page);
+    assert.match(html, /name="update-active"/);
+    assert.match(html, /value="true"/);
+    assert.match(html, /value="false"/);
+    assert.match(html, /変更しない/);
+  } finally {
+    require('../src/lib/prisma').getPrisma = originalGetPrisma;
+  }
 });

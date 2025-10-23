@@ -33,4 +33,4 @@ function getDefaultHandler() {
   return cachedHandler;
 }
 
-export const GET = (_request?: unknown) => getDefaultHandler()();
+export const GET = () => getDefaultHandler()();

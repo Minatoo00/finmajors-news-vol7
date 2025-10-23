@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { aliases, institutions, persons } from './seed-data.ts';
+import { aliases, institutions, persons } from './seed-data';
 
 const prisma = new PrismaClient();
 

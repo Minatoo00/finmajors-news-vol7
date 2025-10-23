@@ -274,7 +274,6 @@ async function runWithConcurrency<T>(
       if (!next) {
         return;
       }
-      // eslint-disable-next-line no-await-in-loop
       await handler(next);
     }
   });

@@ -37,6 +37,9 @@ async function createPersonAction(formData: FormData) {
 async function updatePersonAction(formData: FormData) {
   'use server';
   const prisma = getPrisma();
+  const activeValue = formData.get('update-active');
+  const active =
+    activeValue === 'true' ? true : activeValue === 'false' ? false : undefined;
   const payload = parseUpdatePersonPayload({
     id: formData.get('update-id') ?? '',
     institutionCode: (formData.get('update-institution') as string | null)?.trim() || undefined,
@@ -44,7 +47,7 @@ async function updatePersonAction(formData: FormData) {
     nameJp: (formData.get('update-name-jp') as string | null)?.trim() || undefined,
     nameEn: (formData.get('update-name-en') as string | null)?.trim() || undefined,
     role: (formData.get('update-role') as string | null)?.trim() || undefined,
-    active: formData.get('update-active') ? formData.get('update-active') === 'on' : undefined,
+    active,
     aliases: splitAliases(formData.get('update-aliases')),
   });
   await updateAdminPerson(prisma, payload);
@@ -211,10 +214,39 @@ export default async function AdminPersonsPage() {
                 className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
               />
             </label>
-            <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input type="checkbox" name="update-active" className="h-4 w-4 rounded border-slate-300" />
-              アクティブに設定
-            </label>
+            <fieldset className="space-y-2">
+              <legend className="text-sm font-medium text-slate-700">アクティブ状態</legend>
+              <div className="flex flex-col gap-2 text-sm text-slate-700">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="update-active"
+                    value="unchanged"
+                    defaultChecked
+                    className="h-4 w-4 border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  変更しない
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="update-active"
+                    value="true"
+                    className="h-4 w-4 border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  アクティブに設定
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="update-active"
+                    value="false"
+                    className="h-4 w-4 border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  非アクティブに設定
+                </label>
+              </div>
+            </fieldset>
           </div>
           <button
             type="submit"

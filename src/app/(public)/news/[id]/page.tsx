@@ -45,15 +45,15 @@ export default async function NewsDetailPage({ params }: PageProps) {
         </header>
 
         {detail.imageUrl && (
-          <div className="relative aspect-[16/9] w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+          <div className="relative aspect-video overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
             <Image
               src={detail.imageUrl}
               alt={detail.title}
               fill
               className="object-cover"
-              priority={false}
               sizes="(min-width: 1024px) 768px, 100vw"
               unoptimized
+              priority={false}
             />
           </div>
         )}

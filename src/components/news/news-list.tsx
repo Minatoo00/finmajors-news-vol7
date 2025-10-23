@@ -44,9 +44,9 @@ function ArticleCard({ article }: { article: NewsArticle }) {
             alt={article.title}
             fill
             className="object-cover"
-            sizes="(min-width: 1280px) 360px, (min-width: 768px) 320px, 100vw"
-            priority={false}
+            sizes="(min-width: 1280px) 33vw, (min-width: 768px) 50vw, 100vw"
             unoptimized
+            priority={false}
           />
         </div>
       ) : (

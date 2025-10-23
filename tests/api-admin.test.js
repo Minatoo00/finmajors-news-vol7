@@ -91,6 +91,13 @@ test('parseUpdatePersonPayload coerces id to bigint and cleans aliases', () => {
   assert.deepEqual(payload.aliases, ['alias-one']);
 });
 
+test('parseUpdatePersonPayload accepts string boolean values', () => {
+  const activeTrue = parseUpdatePersonPayload({ id: '21', active: 'true' });
+  const activeFalse = parseUpdatePersonPayload({ id: 22, active: 'false' });
+  assert.equal(activeTrue.active, true);
+  assert.equal(activeFalse.active, false);
+});
+
 test('buildAdminPersonsResponse aggregates aliases', async () => {
   const calls = [];
   const mockPrisma = {

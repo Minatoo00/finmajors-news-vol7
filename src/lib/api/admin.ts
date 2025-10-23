@@ -43,7 +43,16 @@ const updatePersonSchema = z
     nameJp: z.string().trim().min(1).optional(),
     nameEn: z.string().trim().min(1).optional(),
     role: z.string().trim().min(1).optional(),
-    active: z.coerce.boolean().optional(),
+    active: z
+      .preprocess((value) => {
+        if (typeof value === 'string') {
+          const normalized = value.trim().toLowerCase();
+          if (normalized === 'true') return true;
+          if (normalized === 'false') return false;
+        }
+        return value;
+      }, z.boolean())
+      .optional(),
     aliases: z
       .array(z.string())
       .optional()

@@ -60,5 +60,15 @@ function getDefaultHandler() {
   return cachedHandler;
 }
 
-export const GET = (request: NextRequest, context: { params: { id: string } }) =>
-  getDefaultHandler()(request, context);
+type RouteParams = { id: string };
+type RouteContext =
+  | { params: RouteParams }
+  | { params: Promise<RouteParams> };
+
+export const GET = async (request: NextRequest, context: RouteContext) => {
+  const params =
+    context.params instanceof Promise
+      ? await context.params
+      : context.params;
+  return getDefaultHandler()(request, { params });
+};
