@@ -46,6 +46,7 @@ export interface SaveArticleInput {
   title: string;
   description?: string | null;
   content?: string | null;
+  contentHash?: string | null;
   imageUrl?: string | null;
   publishedAt: Date | null;
   fetchedAt: Date;
@@ -129,12 +130,21 @@ export class PersistenceService {
   async saveArticleResult(input: SaveArticleInput): Promise<SaveArticleOutcome> {
     const normalized = normalizeUrl(input.url);
 
-    const existing = await this.prisma.article.findUnique({
+    const existingByUrl = await this.prisma.article.findUnique({
       where: { urlNormalized: normalized },
     } as Prisma.ArticleFindUniqueArgs);
 
-    if (existing) {
-      return { status: 'duplicate', articleId: existing.id as unknown as bigint };
+    if (existingByUrl) {
+      return { status: 'duplicate', articleId: existingByUrl.id as unknown as bigint };
+    }
+
+    if (input.contentHash) {
+      const existingByHash = await this.prisma.article.findUnique({
+        where: { contentHash: input.contentHash },
+      } as Prisma.ArticleFindUniqueArgs);
+      if (existingByHash) {
+        return { status: 'duplicate', articleId: existingByHash.id as unknown as bigint };
+      }
     }
 
     return this.executeWithTransaction(async (client) => {
@@ -146,6 +156,7 @@ export class PersistenceService {
           title: input.title,
           description: input.description ?? undefined,
           content: input.content ?? undefined,
+          contentHash: input.contentHash ?? undefined,
           imageUrl: input.imageUrl ?? undefined,
           publishedAt: input.publishedAt ?? undefined,
           fetchedAt: input.fetchedAt,

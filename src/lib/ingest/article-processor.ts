@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import type { PersonDictionaryEntry, SaveArticleInput } from '../persistence/service';
 import { IngestError, SummaryGenerationError } from './errors';
 import type {
@@ -27,6 +28,7 @@ interface ArticleProcessorOptions {
   resolveUrl?: (gnUrl: string) => Promise<ResolveResult>;
   logger?: IngestLogger;
   clock?: () => Date;
+  mentionThreshold?: number;
 }
 
 const defaultLogger: IngestLogger = {
@@ -60,12 +62,21 @@ export class ArticleProcessorImpl implements ArticleProcessor {
 
   private readonly clock: () => Date;
 
+  private readonly mentionThreshold: number;
+
+  private static readonly PRIMARY_MENTION_WEIGHT = 2;
+
+  private static readonly ALIAS_MENTION_WEIGHT = 1;
+
+  private static readonly MINIMUM_CONTENT_LENGTH = 80;
+
   constructor(options: ArticleProcessorOptions) {
     this.summaryService = options.summaryService;
     this.contentExtractor = options.contentExtractor;
     this.resolveUrl = options.resolveUrl ?? resolveOriginalUrl;
     this.logger = options.logger ?? defaultLogger;
     this.clock = options.clock ?? (() => new Date());
+    this.mentionThreshold = Math.max(1, options.mentionThreshold ?? 2);
   }
 
   async process(
@@ -79,24 +90,41 @@ export class ArticleProcessorImpl implements ArticleProcessor {
     const resolvedUrl = resolution.url ?? candidate.url;
 
     const articleContent = await this.contentExtractor(resolvedUrl);
-    const text = this.extractText(articleContent) ?? candidate.description ?? '';
+    const textRaw = this.extractText(articleContent) ?? candidate.description ?? '';
+    const cleanedText = this.cleanContent(textRaw);
     const imageUrl = this.extractImageUrl(articleContent) ?? candidate.imageUrl ?? null;
 
-    if (!text || text.trim().length === 0) {
+    if (!this.hasSufficientContent(cleanedText)) {
       this.logger.info('ingest.article.skipped', {
         slug: person.person.slug,
-        reason: 'empty_content',
+        reason: 'insufficient_content',
         url: resolvedUrl,
         environment: env.NODE_ENV,
       });
       return null;
     }
 
+    const normalizedText = this.normalizeForComparison(cleanedText);
+    const mentionCount = this.countMentions(normalizedText, person);
+    if (mentionCount < this.mentionThreshold) {
+      this.logger.info('ingest.article.skipped', {
+        slug: person.person.slug,
+        reason: 'insufficient_mentions',
+        mentions: mentionCount,
+        threshold: this.mentionThreshold,
+        url: resolvedUrl,
+        environment: env.NODE_ENV,
+      });
+      return null;
+    }
+
+    const contentHash = this.computeContentHash(normalizedText);
+
     let summary: string | null = null;
     try {
       summary = await this.summaryService.generateSummary({
         title: candidate.title,
-        content: text,
+        content: cleanedText,
         url: resolvedUrl,
         persons: [
           {
@@ -150,7 +178,8 @@ export class ArticleProcessorImpl implements ArticleProcessor {
       sourceDomain: this.toSourceDomain(resolvedUrl, candidate.sourceDomain),
       title: candidate.title,
       description: candidate.description,
-      content: text,
+      content: cleanedText,
+      contentHash,
       imageUrl,
       publishedAt: candidate.publishedAt,
       fetchedAt,
@@ -162,6 +191,80 @@ export class ArticleProcessorImpl implements ArticleProcessor {
       ],
       summaryText: summary,
     };
+  }
+
+  private cleanContent(input: string): string {
+    return input.replace(/\s+/g, ' ').trim();
+  }
+
+  private normalizeForComparison(input: string): string {
+    return input
+      .normalize('NFKC')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+  }
+
+  private computeContentHash(content: string): string {
+    return crypto.createHash('sha256').update(content, 'utf8').digest('hex');
+  }
+
+  private normalizeName(input: string): string {
+    return this.normalizeForComparison(input);
+  }
+
+  private countMentions(normalizedContent: string, person: PersonDictionaryEntry): number {
+    const terms = new Map<string, number>();
+    const addTerm = (value: string, weight = 1) => {
+      const normalized = this.normalizeName(value);
+      if (!normalized) {
+        return;
+      }
+      const existing = terms.get(normalized) ?? 0;
+      terms.set(normalized, Math.max(existing, weight));
+    };
+
+    addTerm(person.person.nameJp, ArticleProcessorImpl.PRIMARY_MENTION_WEIGHT);
+    addTerm(person.person.nameEn, ArticleProcessorImpl.PRIMARY_MENTION_WEIGHT);
+    person.aliases.forEach((alias) => addTerm(alias, ArticleProcessorImpl.ALIAS_MENTION_WEIGHT));
+
+    let score = 0;
+    for (const [term, weight] of terms.entries()) {
+      const matches = this.countOccurrences(normalizedContent, term);
+      if (matches > 0) {
+        score += matches * weight;
+      }
+    }
+    return score;
+  }
+
+  private hasSufficientContent(content: string): boolean {
+    const trimmed = content.trim();
+    if (trimmed.length < ArticleProcessorImpl.MINIMUM_CONTENT_LENGTH) {
+      return false;
+    }
+    const tokens = trimmed
+      .split(/[\p{Punct}\s]+/u)
+      .map((token) => this.normalizeForComparison(token))
+      .filter((token) => token.length > 1);
+    const uniqueTokens = new Set(tokens);
+    return uniqueTokens.size >= Math.max(1, ArticleProcessorImpl.MINIMUM_CONTENT_LENGTH / 8);
+  }
+
+  private countOccurrences(haystack: string, needle: string): number {
+    if (!needle) {
+      return 0;
+    }
+    let index = haystack.indexOf(needle);
+    if (index === -1) {
+      return 0;
+    }
+    let count = 0;
+    while (index !== -1) {
+      count += 1;
+      index = haystack.indexOf(needle, index + needle.length);
+    }
+    return count;
   }
 
   private toSourceDomain(resolvedUrl: string, fallbackDomain: string): string {
@@ -213,4 +316,8 @@ export class ArticleProcessorImpl implements ArticleProcessor {
 
     return null;
   }
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

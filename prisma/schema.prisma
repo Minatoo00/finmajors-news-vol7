@@ -52,6 +52,7 @@ model Article {
   title         String
   description   String?
   content       String?
+  contentHash   String?         @unique @map("content_hash") @db.VarChar(64)
   imageUrl      String?         @map("image_url")
   publishedAt   DateTime?       @map("published_at") @db.Timestamptz(6)
   fetchedAt     DateTime        @map("fetched_at") @db.Timestamptz(6)
