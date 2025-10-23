@@ -12,7 +12,7 @@ const { SummaryServiceImpl } = require('../src/lib/ingest/summary-service');
 
 const input = {
   title: 'Headline',
-  content: '本文',
+  content: 'article body text',
   url: 'https://news.example.com/a',
   persons: [
     {

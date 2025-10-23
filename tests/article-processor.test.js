@@ -26,14 +26,22 @@ const entry = {
   aliases: ['J. Doe'],
 };
 
-test('ArticleProcessor extracts content and requests summary', async () => {
+test('ArticleProcessor resolves URL, extracts content, and requests summary', async () => {
   const extractorCalls = [];
   const summaryCalls = [];
+  const resolveCalls = [];
   const processor = new ArticleProcessorImpl({
     contentExtractor: async (url) => {
       extractorCalls.push(url);
       return {
         content: '本文テキスト',
+      };
+    },
+    resolveUrl: async (url) => {
+      resolveCalls.push(url);
+      return {
+        url: 'https://original.example.com/article',
+        method: 'batchexecute',
       };
     },
     summaryService: {
@@ -61,16 +69,20 @@ test('ArticleProcessor extracts content and requests summary', async () => {
   });
 
   assert.ok(result);
-  assert.equal(result.url, candidate.url);
+  assert.equal(result.url, 'https://original.example.com/article');
   assert.equal(result.title, candidate.title);
   assert.equal(result.summaryText, '要約結果');
+  assert.equal(result.content, '本文テキスト');
   assert.equal(extractorCalls.length, 1);
   assert.equal(summaryCalls.length, 1);
+  assert.deepEqual(resolveCalls, [candidate.url]);
+  assert.equal(summaryCalls[0].url, 'https://original.example.com/article');
 });
 
 test('ArticleProcessor skips when content not available', async () => {
   const processor = new ArticleProcessorImpl({
     contentExtractor: async () => null,
+    resolveUrl: async (url) => ({ url, method: 'fallback' }),
     summaryService: {
       generateSummary: async () => 'summary',
     },
@@ -98,6 +110,7 @@ test('ArticleProcessor skips when content not available', async () => {
 test('ArticleProcessor throws when summary generation returns empty', async () => {
   const processor = new ArticleProcessorImpl({
     contentExtractor: async () => ({ content: '本文テキスト' }),
+    resolveUrl: async (url) => ({ url, method: 'fallback' }),
     summaryService: {
       generateSummary: async () => null,
     },

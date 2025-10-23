@@ -118,6 +118,7 @@ test('saveArticleResult skips duplicates based on normalized URL', async () => {
     publishedAt: new Date('2025-01-01T00:00:00Z'),
     fetchedAt: new Date('2025-01-01T00:05:00Z'),
     persons: [{ id: BigInt(1), slug: 'john-doe' }],
+    content: 'article-body',
     summaryText: 'summary',
   });
   assert.equal(deduped.status, 'duplicate');
@@ -130,6 +131,7 @@ test('saveArticleResult skips duplicates based on normalized URL', async () => {
     publishedAt: null,
     fetchedAt: new Date('2025-01-01T01:05:00Z'),
     persons: [{ id: BigInt(1), slug: 'john-doe' }],
+    content: 'article-body-b',
     summaryText: 'summary b',
   });
   assert.equal(created.status, 'inserted');

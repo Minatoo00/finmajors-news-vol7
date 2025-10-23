@@ -81,6 +81,7 @@ test('AdminPersonsPage update form renders radio group for active status', async
     assert.match(html, /value="true"/);
     assert.match(html, /value="false"/);
     assert.match(html, /変更しない/);
+    assert.match(html, /更新する/);
   } finally {
     require('../src/lib/prisma').getPrisma = originalGetPrisma;
   }

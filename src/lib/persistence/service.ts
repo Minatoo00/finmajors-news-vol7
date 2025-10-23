@@ -45,6 +45,7 @@ export interface SaveArticleInput {
   sourceDomain: string;
   title: string;
   description?: string | null;
+  content?: string | null;
   imageUrl?: string | null;
   publishedAt: Date | null;
   fetchedAt: Date;
@@ -144,6 +145,7 @@ export class PersistenceService {
           sourceDomain: input.sourceDomain,
           title: input.title,
           description: input.description ?? undefined,
+          content: input.content ?? undefined,
           imageUrl: input.imageUrl ?? undefined,
           publishedAt: input.publishedAt ?? undefined,
           fetchedAt: input.fetchedAt,

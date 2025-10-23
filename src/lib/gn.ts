@@ -1,6 +1,6 @@
-type ResolveMethod = 'batchexecute' | 'playwright' | 'fallback';
+export type ResolveMethod = 'batchexecute' | 'playwright' | 'fallback';
 
-interface ResolveResult {
+export interface ResolveResult {
   url: string | null;
   method: ResolveMethod;
 }

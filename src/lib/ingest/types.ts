@@ -1,5 +1,6 @@
 import type { AppEnv } from '../env';
 import type { PersonDictionaryEntry, SaveArticleInput } from '../persistence/service';
+import type { ResolveMethod } from '../gn';
 
 export interface RssArticleCandidate {
   url: string;
@@ -7,6 +8,7 @@ export interface RssArticleCandidate {
   title: string;
   description: string | null;
   imageUrl?: string | null;
+  content?: string | null;
   publishedAt: Date | null;
   fetchedAt: Date;
   raw?: unknown;

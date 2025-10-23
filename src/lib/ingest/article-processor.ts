@@ -7,6 +7,7 @@ import type {
   RssArticleCandidate,
   SummaryService,
 } from './types';
+import { resolveOriginalUrl, type ResolveResult } from '../gn';
 
 type ContentExtractorResult =
   | string
@@ -23,6 +24,7 @@ type ContentExtractor = (url: string) => Promise<ContentExtractorResult>;
 interface ArticleProcessorOptions {
   summaryService: SummaryService;
   contentExtractor: ContentExtractor;
+  resolveUrl?: (gnUrl: string) => Promise<ResolveResult>;
   logger?: IngestLogger;
   clock?: () => Date;
 }
@@ -52,6 +54,8 @@ export class ArticleProcessorImpl implements ArticleProcessor {
 
   private readonly contentExtractor: ContentExtractor;
 
+  private readonly resolveUrl: (url: string) => Promise<ResolveResult>;
+
   private readonly logger: IngestLogger;
 
   private readonly clock: () => Date;
@@ -59,6 +63,7 @@ export class ArticleProcessorImpl implements ArticleProcessor {
   constructor(options: ArticleProcessorOptions) {
     this.summaryService = options.summaryService;
     this.contentExtractor = options.contentExtractor;
+    this.resolveUrl = options.resolveUrl ?? resolveOriginalUrl;
     this.logger = options.logger ?? defaultLogger;
     this.clock = options.clock ?? (() => new Date());
   }
@@ -69,7 +74,11 @@ export class ArticleProcessorImpl implements ArticleProcessor {
     context: ProcessContext,
   ): Promise<SaveArticleInput | null> {
     const { env } = context;
-    const articleContent = await this.contentExtractor(candidate.url);
+
+    const resolution = await this.resolveUrl(candidate.url);
+    const resolvedUrl = resolution.url ?? candidate.url;
+
+    const articleContent = await this.contentExtractor(resolvedUrl);
     const text = this.extractText(articleContent) ?? candidate.description ?? '';
     const imageUrl = this.extractImageUrl(articleContent) ?? candidate.imageUrl ?? null;
 
@@ -77,7 +86,7 @@ export class ArticleProcessorImpl implements ArticleProcessor {
       this.logger.info('ingest.article.skipped', {
         slug: person.person.slug,
         reason: 'empty_content',
-        url: candidate.url,
+        url: resolvedUrl,
         environment: env.NODE_ENV,
       });
       return null;
@@ -88,7 +97,7 @@ export class ArticleProcessorImpl implements ArticleProcessor {
       summary = await this.summaryService.generateSummary({
         title: candidate.title,
         content: text,
-        url: candidate.url,
+        url: resolvedUrl,
         persons: [
           {
             slug: person.person.slug,
@@ -99,14 +108,17 @@ export class ArticleProcessorImpl implements ArticleProcessor {
         ],
       });
     } catch (error) {
-      const ingestError = error instanceof IngestError ? error : new SummaryGenerationError(
-        error instanceof Error ? error.message : 'Summary generation failed',
-        { cause: error instanceof Error ? error : undefined },
-      );
+      const ingestError =
+        error instanceof IngestError
+          ? error
+          : new SummaryGenerationError(
+              error instanceof Error ? error.message : 'Summary generation failed',
+              { cause: error instanceof Error ? error : undefined },
+            );
       this.logger.error('ingest.summary.failed', {
         code: ingestError.code,
         slug: person.person.slug,
-        url: candidate.url,
+        url: resolvedUrl,
         error: ingestError.message,
         stack: ingestError.stack,
         environment: env.NODE_ENV,
@@ -116,12 +128,15 @@ export class ArticleProcessorImpl implements ArticleProcessor {
 
     if (!summary || summary.trim().length === 0) {
       const emptyError = new SummaryGenerationError('Summary text is empty', {
-        details: { slug: person.person.slug, url: candidate.url },
+        details: {
+          slug: person.person.slug,
+          url: resolvedUrl,
+        },
       });
       this.logger.error('ingest.summary.unavailable', {
         code: emptyError.code,
         slug: person.person.slug,
-        url: candidate.url,
+        url: resolvedUrl,
         error: emptyError.message,
         environment: env.NODE_ENV,
       });
@@ -131,10 +146,11 @@ export class ArticleProcessorImpl implements ArticleProcessor {
     const fetchedAt = candidate.fetchedAt ?? this.clock();
 
     return {
-      url: candidate.url,
-      sourceDomain: candidate.sourceDomain,
+      url: resolvedUrl,
+      sourceDomain: this.toSourceDomain(resolvedUrl, candidate.sourceDomain),
       title: candidate.title,
       description: candidate.description,
+      content: text,
       imageUrl,
       publishedAt: candidate.publishedAt,
       fetchedAt,
@@ -146,6 +162,15 @@ export class ArticleProcessorImpl implements ArticleProcessor {
       ],
       summaryText: summary,
     };
+  }
+
+  private toSourceDomain(resolvedUrl: string, fallbackDomain: string): string {
+    try {
+      const parsed = new URL(resolvedUrl);
+      return parsed.hostname;
+    } catch {
+      return fallbackDomain;
+    }
   }
 
   private extractText(result: ContentExtractorResult): string | null {

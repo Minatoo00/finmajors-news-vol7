@@ -84,6 +84,7 @@ test('job runner processes persons, persists results, and returns stats', async 
         return [
           {
             url: 'https://news.example.com/john',
+            resolvedUrl: 'https://original.example.com/john',
             sourceDomain: 'news.example.com',
             title: 'John headline',
             description: 'desc',
@@ -94,6 +95,7 @@ test('job runner processes persons, persists results, and returns stats', async 
       return [
         {
           url: 'https://news.example.com/mary',
+          resolvedUrl: 'https://original.example.com/mary',
           sourceDomain: 'news.example.com',
           title: 'Mary headline',
           description: null,
@@ -101,6 +103,7 @@ test('job runner processes persons, persists results, and returns stats', async 
         },
         {
           url: 'https://news.example.com/dup',
+          resolvedUrl: 'https://original.example.com/dup',
           sourceDomain: 'news.example.com',
           title: 'Mary duplicate',
           description: null,
@@ -112,10 +115,11 @@ test('job runner processes persons, persists results, and returns stats', async 
 
   const processor = {
     process: async (item, entry) => ({
-      url: item.url,
+      url: item.resolvedUrl ?? item.url,
       sourceDomain: item.sourceDomain,
       title: item.title,
       description: item.description,
+      content: 'article-body',
       publishedAt: item.publishedAt,
       fetchedAt: new Date('2025-01-01T03:00:00Z'),
       persons: [{ id: entry.person.id, slug: entry.person.slug }],
@@ -171,6 +175,7 @@ test('job runner retries fetch failures and counts errors when retries exhausted
       sourceDomain: 'example.com',
       title: 'Title',
       description: null,
+      content: 'article-body',
       publishedAt: new Date(),
       fetchedAt: new Date(),
       persons: [{ id: 1n, slug: 'john' }],
@@ -236,10 +241,11 @@ test('job runner respects per-person article limit', async () => {
     process: async (item, entry) => {
       processedUrls.push(item.url);
       return {
-        url: item.url,
+        url: item.resolvedUrl ?? item.url,
         sourceDomain: item.sourceDomain,
         title: item.title,
         description: item.description,
+        content: 'article-body',
         publishedAt: item.publishedAt,
         fetchedAt: new Date('2025-01-01T03:00:00Z'),
         persons: [{ id: entry.person.id, slug: entry.person.slug }],
@@ -304,10 +310,11 @@ test('job runner respects concurrency limit', async () => {
 
   const processor = {
     process: async (item, entry) => ({
-      url: item.url,
+      url: item.resolvedUrl ?? item.url,
       sourceDomain: item.sourceDomain,
       title: item.title,
       description: item.description,
+      content: 'article-body',
       publishedAt: item.publishedAt,
       fetchedAt: new Date(),
       persons: [{ id: entry.person.id, slug: entry.person.slug }],
