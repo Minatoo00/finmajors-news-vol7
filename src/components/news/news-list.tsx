@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 
@@ -111,44 +114,89 @@ function ArticleCard({ article }: { article: NewsArticle }) {
   );
 }
 
-function buildCursorHref(
-  nextCursor: string,
-  searchParams?: Record<string, string | undefined>,
-) {
-  const params = new URLSearchParams();
-  if (searchParams) {
-    for (const [key, value] of Object.entries(searchParams)) {
-      if (value && key !== 'cursor') {
-        params.set(key, value);
+export function NewsList({ articles, nextCursor, searchParams }: NewsListProps) {
+  const [items, setItems] = useState<NewsArticle[]>(articles);
+  const [cursor, setCursor] = useState<string | undefined>(nextCursor ?? undefined);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleLoadMore = async () => {
+    if (!cursor || isLoading) {
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    const params = new URLSearchParams();
+    if (searchParams) {
+      for (const [key, value] of Object.entries(searchParams)) {
+        if (value && key !== 'cursor') {
+          params.set(key, value);
+        }
       }
     }
-  }
-  params.set('cursor', nextCursor);
-  const queryString = params.toString();
-  return `?${queryString}`;
-}
+    params.set('cursor', cursor);
 
-export function NewsList({ articles, nextCursor, searchParams }: NewsListProps) {
+    const requestUrl = `/api/articles?${params.toString()}`;
+
+    try {
+      const response = await fetch(requestUrl, {
+        method: 'GET',
+        cache: 'no-store',
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to load more articles: ${response.status}`);
+      }
+
+      const payload = (await response.json()) as {
+        items: NewsArticle[];
+        nextCursor: string | null;
+      };
+
+      setItems((prev) => {
+        const existingIds = new Set(prev.map((article) => article.id));
+        const merged = payload.items.filter((article) => !existingIds.has(article.id));
+        return [...prev, ...merged];
+      });
+      setCursor(payload.nextCursor ?? undefined);
+    } catch (loadError) {
+      console.error(loadError);
+      setError('ニュースの読み込みに失敗しました。少し時間をおいて再度お試しください。');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const loadMoreButtonDisabled = isLoading || !cursor;
+
   return (
     <div className="space-y-8">
-      {articles.length === 0 ? (
+      {items.length === 0 ? (
         <p className="text-sm text-slate-500">該当するニュースが見つかりませんでした。</p>
       ) : (
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
-          {articles.map((article) => (
+          {items.map((article) => (
             <ArticleCard key={article.id} article={article} />
           ))}
         </div>
       )}
 
-      {nextCursor && (
+      {error ? (
+        <p className="text-center text-sm text-red-600">{error}</p>
+      ) : null}
+
+      {cursor && (
         <div className="flex justify-center pt-2">
-          <Link
-            href={buildCursorHref(nextCursor, searchParams)}
-            className="rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-indigo-600 hover:border-indigo-400 hover:text-indigo-500"
+          <button
+            type="button"
+            onClick={handleLoadMore}
+            disabled={loadMoreButtonDisabled}
+            className={`rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-indigo-600 hover:border-indigo-400 hover:text-indigo-500 ${loadMoreButtonDisabled ? 'cursor-not-allowed opacity-60 hover:border-slate-200 hover:text-indigo-600' : ''}`}
           >
-            さらに読み込む
-          </Link>
+            {isLoading ? '読み込み中…' : 'さらに読み込む'}
+          </button>
         </div>
       )}
     </div>

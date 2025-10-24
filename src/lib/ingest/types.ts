@@ -1,5 +1,5 @@
 import type { AppEnv } from '../env';
-import type { PersonDictionaryEntry, SaveArticleInput } from '../persistence/service';
+import type { PersonDictionaryEntry, SaveArticleDraftInput } from '../persistence/service';
 import type { ResolveMethod } from '../gn';
 
 export interface RssArticleCandidate {
@@ -29,18 +29,29 @@ export interface RssFetcher {
   fetch(person: PersonDictionaryEntry, context: FetchContext): Promise<RssArticleCandidate[]>;
 }
 
+export interface ProcessedArticle {
+  draft: SaveArticleDraftInput;
+  summaryInput: SummaryInput;
+}
+
 export interface ArticleProcessor {
   process(
     candidate: RssArticleCandidate,
     person: PersonDictionaryEntry,
     context: ProcessContext,
-  ): Promise<SaveArticleInput | null>;
+  ): Promise<ProcessedArticle | null>;
+}
+
+export interface PersistenceDuplicateChecker {
+  isDuplicateArticle(url: string, contentHash?: string | null): Promise<{ status: 'duplicate'; articleId: bigint } | null>;
 }
 
 export interface IngestStats {
   inserted: number;
   deduped: number;
   errors: number;
+  skipped: number;
+  fetched: number;
 }
 
 export interface IngestResult {

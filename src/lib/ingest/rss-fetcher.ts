@@ -60,9 +60,10 @@ export class GoogleNewsRssFetcher implements RssFetcher {
     context: FetchContext,
   ): Promise<RssArticleCandidate[]> {
     const controller = new AbortController();
-    const timer = context.timeoutMs
-      ? setTimeout(() => controller.abort(), context.timeoutMs).unref?.()
-      : null;
+    const timer = context.timeoutMs ? setTimeout(() => controller.abort(), context.timeoutMs) : null;
+    if (typeof timer !== 'number') {
+      timer?.unref?.();
+    }
 
     const requestUrl = this.buildRequestUrl(person);
 

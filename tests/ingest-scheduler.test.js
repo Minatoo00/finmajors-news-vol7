@@ -105,10 +105,10 @@ test('runOnce executes job runner and logs structured message', async () => {
   assert.equal(result.stats.inserted, 2);
   const logEntry = entries.find((entry) => entry.message === 'ingest.run.complete');
   assert.ok(logEntry, 'structured log entry should exist');
-  assert.deepEqual(logEntry.meta, {
-    jobId: '42',
-    inserted: 2,
-    deduped: 1,
-    errors: 0,
-  });
+  assert.equal(logEntry.meta.jobId, '42');
+  assert.equal(logEntry.meta.inserted, 2);
+  assert.equal(logEntry.meta.deduped, 1);
+  assert.equal(logEntry.meta.errors, 0);
+  assert.equal(logEntry.meta.skipped ?? 0, 0);
+  assert.equal(logEntry.meta.fetched ?? 0, 0);
 });

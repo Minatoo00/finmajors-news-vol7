@@ -98,6 +98,8 @@ export class IngestScheduler {
           inserted: result.stats.inserted,
           deduped: result.stats.deduped,
           errors: result.stats.errors,
+          skipped: result.stats.skipped,
+          fetched: result.stats.fetched,
         });
       }
       return result;

@@ -67,13 +67,14 @@ test('job runner processes persons, persists results, and returns stats', async 
   const persistence = {
     loadPersonDictionary: async () => dictionary,
     recordJobStart: async () => ({ id: 101n }),
+    completeJobRun: async (_id, stats) => stats,
+    isDuplicateArticle: async (url) => (url.endsWith('/dup') ? { status: 'duplicate', articleId: 2n } : null),
     saveArticleResult: async (input) => {
       if (input.url.endsWith('/dup')) {
         return { status: 'duplicate', articleId: 2n };
       }
       return { status: 'inserted', articleId: 1n };
     },
-    completeJobRun: async (_id, stats) => stats,
   };
 
   const fetchCalls = [];
@@ -115,16 +116,36 @@ test('job runner processes persons, persists results, and returns stats', async 
 
   const processor = {
     process: async (item, entry) => ({
-      url: item.resolvedUrl ?? item.url,
-      sourceDomain: item.sourceDomain,
-      title: item.title,
-      description: item.description,
-      content: 'article-body',
-      publishedAt: item.publishedAt,
-      fetchedAt: new Date('2025-01-01T03:00:00Z'),
-      persons: [{ id: entry.person.id, slug: entry.person.slug }],
-      summaryText: null,
+      draft: {
+        url: item.resolvedUrl ?? item.url,
+        sourceDomain: item.sourceDomain,
+        title: item.title,
+        description: item.description,
+        content: 'article-body',
+        contentHash: 'hash:' + item.url,
+        publishedAt: item.publishedAt,
+        fetchedAt: new Date('2025-01-01T03:00:00Z'),
+        persons: [{ id: entry.person.id, slug: entry.person.slug }],
+        imageUrl: null,
+      },
+      summaryInput: {
+        title: item.title,
+        content: 'article-body',
+        url: item.resolvedUrl ?? item.url,
+        persons: [
+          {
+            slug: entry.person.slug,
+            nameJp: entry.person.nameJp,
+            nameEn: entry.person.nameEn,
+            institutionCode: entry.person.institutionCode,
+          },
+        ],
+      },
     }),
+  };
+
+  const summaryService = {
+    generateSummary: async (input) => `summary for ${input.url}`,
   };
 
   const { logger, entries } = createLogger();
@@ -133,6 +154,7 @@ test('job runner processes persons, persists results, and returns stats', async 
     persistence,
     fetcher,
     processor,
+    summaryService,
     logger,
     env: baseEnv,
   });
@@ -141,11 +163,13 @@ test('job runner processes persons, persists results, and returns stats', async 
 
   assert.equal(fetchCalls.length, 2);
   assert.equal(result.jobId, 101n);
-  assert.deepEqual(result.stats, { inserted: 2, deduped: 1, errors: 0 });
+  assert.deepEqual(result.stats, { inserted: 2, deduped: 1, errors: 0, skipped: 0, fetched: 3 });
 
   const completionLog = entries.find((entry) => entry.message === 'ingest.job.complete');
   assert.ok(completionLog, 'completion log should exist');
   assert.equal(completionLog.meta.inserted, 2);
+  assert.equal(completionLog.meta.fetched, 3);
+  assert.equal(completionLog.meta.skipped, 0);
 });
 
 test('job runner retries fetch failures and counts errors when retries exhausted', async () => {
@@ -158,8 +182,9 @@ test('job runner retries fetch failures and counts errors when retries exhausted
   const persistence = {
     loadPersonDictionary: async () => dictionary,
     recordJobStart: async () => ({ id: 101n }),
-    saveArticleResult: async () => ({ status: 'inserted', articleId: 1n }),
     completeJobRun: async (_id, stats) => stats,
+    isDuplicateArticle: async () => null,
+    saveArticleResult: async () => ({ status: 'inserted', articleId: 1n }),
   };
 
   const fetcher = {
@@ -171,16 +196,36 @@ test('job runner retries fetch failures and counts errors when retries exhausted
 
   const processor = {
     process: async () => ({
-      url: 'https://example.com',
-      sourceDomain: 'example.com',
-      title: 'Title',
-      description: null,
-      content: 'article-body',
-      publishedAt: new Date(),
-      fetchedAt: new Date(),
-      persons: [{ id: 1n, slug: 'john' }],
-      summaryText: null,
+      draft: {
+        url: 'https://example.com',
+        sourceDomain: 'example.com',
+        title: 'Title',
+        description: null,
+        content: 'article-body',
+        contentHash: 'hash',
+        imageUrl: null,
+        publishedAt: new Date(),
+        fetchedAt: new Date(),
+        persons: [{ id: 1n, slug: 'john' }],
+      },
+      summaryInput: {
+        title: 'Title',
+        content: 'article-body',
+        url: 'https://example.com',
+        persons: [
+          {
+            slug: 'john',
+            nameJp: '名前1',
+            nameEn: 'Name 1',
+            institutionCode: 'FRB',
+          },
+        ],
+      },
     }),
+  };
+
+  const summaryService = {
+    generateSummary: async () => 'summary text',
   };
 
   const { logger, entries } = createLogger();
@@ -189,6 +234,7 @@ test('job runner retries fetch failures and counts errors when retries exhausted
     persistence,
     fetcher,
     processor,
+    summaryService,
     logger,
     env: {
       ...baseEnv,
@@ -200,6 +246,8 @@ test('job runner retries fetch failures and counts errors when retries exhausted
 
   assert.equal(attempts, 3, 'should attempt fetch with retries (initial + 2)');
   assert.equal(result.stats.errors, 1);
+  assert.equal(result.stats.fetched, 0);
+  assert.equal(result.stats.skipped, 0);
   const retryLogs = entries.filter((entry) => entry.message === 'ingest.retry');
   assert.equal(retryLogs.length, 2);
   assert.ok(retryLogs.every((log) => log.meta?.code === 'INGEST_RETRY'));
@@ -228,8 +276,9 @@ test('job runner respects per-person article limit', async () => {
   const persistence = {
     loadPersonDictionary: async () => dictionary,
     recordJobStart: async () => ({ id: 55n }),
-    saveArticleResult: async () => ({ status: 'inserted', articleId: 1n }),
     completeJobRun: async (_id, stats) => stats,
+    isDuplicateArticle: async () => null,
+    saveArticleResult: async () => ({ status: 'inserted', articleId: 1n }),
   };
 
   const fetcher = {
@@ -241,23 +290,46 @@ test('job runner respects per-person article limit', async () => {
     process: async (item, entry) => {
       processedUrls.push(item.url);
       return {
-        url: item.resolvedUrl ?? item.url,
-        sourceDomain: item.sourceDomain,
-        title: item.title,
-        description: item.description,
-        content: 'article-body',
-        publishedAt: item.publishedAt,
-        fetchedAt: new Date('2025-01-01T03:00:00Z'),
-        persons: [{ id: entry.person.id, slug: entry.person.slug }],
-        summaryText: null,
+        draft: {
+          url: item.resolvedUrl ?? item.url,
+          sourceDomain: item.sourceDomain,
+          title: item.title,
+          description: item.description,
+          content: 'article-body',
+          contentHash: `hash:${item.url}`,
+          imageUrl: null,
+          publishedAt: item.publishedAt,
+          fetchedAt: new Date('2025-01-01T03:00:00Z'),
+          persons: [{ id: entry.person.id, slug: entry.person.slug }],
+        },
+        summaryInput: {
+          title: item.title,
+          content: 'article-body',
+          url: item.resolvedUrl ?? item.url,
+          persons: [
+            {
+              slug: entry.person.slug,
+              nameJp: entry.person.nameJp,
+              nameEn: entry.person.nameEn,
+              institutionCode: entry.person.institutionCode,
+            },
+          ],
+        },
       };
     },
   };
+
+  const summaryService = {
+    generateSummary: async (input) => `summary for ${input.url}`,
+  };
+
+  const { logger } = createLogger();
 
   const runner = new IngestJobRunner({
     persistence,
     fetcher,
     processor,
+    summaryService,
     env: {
       ...baseEnv,
       INGEST_MAX_ARTICLES_PER_PERSON: 8,
@@ -269,6 +341,7 @@ test('job runner respects per-person article limit', async () => {
   assert.equal(processedUrls.length, 8);
   assert.ok(processedUrls.every((url) => url.startsWith('https://news.example.com/item-')));
   assert.equal(result.stats.inserted, 8);
+  assert.equal(result.stats.fetched, 12);
 });
 
 test('job runner respects concurrency limit', async () => {
@@ -284,8 +357,9 @@ test('job runner respects concurrency limit', async () => {
   const persistence = {
     loadPersonDictionary: async () => dictionary,
     recordJobStart: async () => ({ id: 101n }),
-    saveArticleResult: async () => ({ status: 'inserted', articleId: 1n }),
     completeJobRun: async (_id, stats) => stats,
+    isDuplicateArticle: async () => null,
+    saveArticleResult: async () => ({ status: 'inserted', articleId: 1n }),
   };
 
   const concurrent = [];
@@ -310,16 +384,36 @@ test('job runner respects concurrency limit', async () => {
 
   const processor = {
     process: async (item, entry) => ({
-      url: item.resolvedUrl ?? item.url,
-      sourceDomain: item.sourceDomain,
-      title: item.title,
-      description: item.description,
-      content: 'article-body',
-      publishedAt: item.publishedAt,
-      fetchedAt: new Date(),
-      persons: [{ id: entry.person.id, slug: entry.person.slug }],
-      summaryText: null,
+      draft: {
+        url: item.resolvedUrl ?? item.url,
+        sourceDomain: item.sourceDomain,
+        title: item.title,
+        description: item.description,
+        content: 'article-body',
+        contentHash: `hash:${item.url}`,
+        imageUrl: null,
+        publishedAt: item.publishedAt,
+        fetchedAt: new Date(),
+        persons: [{ id: entry.person.id, slug: entry.person.slug }],
+      },
+      summaryInput: {
+        title: item.title,
+        content: 'article-body',
+        url: item.resolvedUrl ?? item.url,
+        persons: [
+          {
+            slug: entry.person.slug,
+            nameJp: entry.person.nameJp,
+            nameEn: entry.person.nameEn,
+            institutionCode: entry.person.institutionCode,
+          },
+        ],
+      },
     }),
+  };
+
+  const summaryService = {
+    generateSummary: async (input) => `summary for ${input.url}`,
   };
 
   const { logger } = createLogger();
@@ -328,7 +422,7 @@ test('job runner respects concurrency limit', async () => {
     persistence,
     fetcher,
     processor,
-    logger,
+    summaryService,
     env: {
       ...baseEnv,
       INGEST_CONCURRENCY: 1,
@@ -350,11 +444,12 @@ test('job runner logs article processing failures with structured metadata', asy
   const persistence = {
     loadPersonDictionary: async () => dictionary,
     recordJobStart: async () => ({ id: 99n }),
+    completeJobRun: async (_id, stats) => stats,
+    isDuplicateArticle: async () => null,
     saveArticleResult: async () => {
       calls.save += 1;
       return { status: 'inserted', articleId: 1n };
     },
-    completeJobRun: async (_id, stats) => stats,
   };
 
   const fetcher = {
@@ -378,12 +473,17 @@ test('job runner logs article processing failures with structured metadata', asy
     },
   };
 
+  const summaryService = {
+    generateSummary: async () => 'summary',
+  };
+
   const { logger, entries } = createLogger();
 
   const runner = new IngestJobRunner({
     persistence,
     fetcher,
     processor,
+    summaryService,
     logger,
     env: baseEnv,
   });
@@ -391,6 +491,8 @@ test('job runner logs article processing failures with structured metadata', asy
   const result = await runner.run();
   assert.equal(result.stats.errors, 1);
   assert.equal(result.stats.inserted, 0);
+  assert.equal(result.stats.skipped, 1);
+  assert.equal(result.stats.fetched, 1);
   assert.equal(calls.save, 0, 'saveArticleResult should not be called when processor throws');
 
   const articleError = entries.find((entry) => entry.message === 'ingest.article.failed');

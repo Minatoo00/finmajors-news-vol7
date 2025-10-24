@@ -128,7 +128,10 @@ export function createHttpContentExtractor(timeoutMs: number, fetchImpl: FetchFn
 
     const fetchPage = async (targetUrl: string): Promise<string | null> => {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), maxDuration).unref?.() ?? null;
+      const timer = setTimeout(() => controller.abort(), maxDuration);
+      if (typeof timer !== 'number') {
+        timer.unref?.();
+      }
       try {
         const response = await fetchImpl(targetUrl, {
           signal: controller.signal,
@@ -153,9 +156,7 @@ export function createHttpContentExtractor(timeoutMs: number, fetchImpl: FetchFn
         );
         return null;
       } finally {
-        if (timer) {
-          clearTimeout(timer);
-        }
+        clearTimeout(timer);
       }
     };
 
@@ -362,7 +363,10 @@ export function createIngestApplication(options: CreateIngestApplicationOptions 
   const persistencePort = {
     loadPersonDictionary: () => persistenceService.loadPersonDictionary(),
     recordJobStart: (startedAt: Date) => persistenceService.recordJobStart(startedAt),
-    completeJobRun: (id: bigint, stats: { inserted: number; deduped: number; errors: number }) =>
+    completeJobRun: (
+      id: bigint,
+      stats: { inserted: number; deduped: number; errors: number; skipped: number; fetched: number },
+    ) =>
       persistenceService.completeJobRun(id, stats),
     saveArticleResult: (input: Parameters<PersistenceService['saveArticleResult']>[0]) =>
       persistenceService.saveArticleResult(input),

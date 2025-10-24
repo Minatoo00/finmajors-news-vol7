@@ -1,7 +1,17 @@
 import { getEnv, type AppEnv } from '../env';
-import type { PersistenceService, SaveArticleInput, PersonDictionaryEntry } from '../persistence/service';
-import { IngestError } from './errors';
-import type { ArticleProcessor, FetchContext, IngestLogger, IngestResult, IngestStats, ProcessContext, RssFetcher, RssArticleCandidate } from './types';
+import type { PersistenceService, SaveArticleInput, SaveArticleDraftInput, PersonDictionaryEntry } from '../persistence/service';
+import { IngestError, SummaryGenerationError } from './errors';
+import type {
+  ArticleProcessor,
+  FetchContext,
+  IngestLogger,
+  IngestResult,
+  IngestStats,
+  ProcessContext,
+  RssFetcher,
+  RssArticleCandidate,
+  SummaryService,
+} from './types';
 
 const defaultLogger: IngestLogger = {
   info(message, meta) {
@@ -37,6 +47,7 @@ interface PersistencePort {
   loadPersonDictionary(): Promise<Awaited<ReturnType<PersistenceService['loadPersonDictionary']>>>;
   recordJobStart(startedAt: Date): Promise<{ id: bigint }>;
   completeJobRun(id: bigint, stats: IngestStats): Promise<unknown>;
+  isDuplicateArticle(url: string, contentHash?: string | null): Promise<{ status: 'duplicate'; articleId: bigint } | null>;
   saveArticleResult(input: SaveArticleInput): Promise<{ status: 'duplicate' | 'inserted'; articleId: bigint }>;
 }
 
@@ -44,6 +55,7 @@ interface Dependencies {
   persistence: PersistencePort;
   fetcher: RssFetcher;
   processor: ArticleProcessor;
+  summaryService: SummaryService;
   logger?: IngestLogger;
   env?: AppEnv;
   now?: () => Date;
@@ -56,6 +68,8 @@ export class IngestJobRunner {
 
   private readonly processor: ArticleProcessor;
 
+  private readonly summaryService: SummaryService;
+
   private readonly logger: IngestLogger;
 
   private readonly env: AppEnv;
@@ -66,6 +80,7 @@ export class IngestJobRunner {
     this.persistence = deps.persistence;
     this.fetcher = deps.fetcher;
     this.processor = deps.processor;
+    this.summaryService = deps.summaryService;
     this.logger = deps.logger ?? defaultLogger;
     this.env = deps.env ?? getEnv();
     this.now = deps.now ?? (() => new Date());
@@ -74,7 +89,7 @@ export class IngestJobRunner {
   async run(): Promise<IngestResult> {
     const jobStartedAt = this.now();
     const job = await this.persistence.recordJobStart(jobStartedAt);
-    const stats: IngestStats = { inserted: 0, deduped: 0, errors: 0 };
+    const stats: IngestStats = { inserted: 0, deduped: 0, errors: 0, skipped: 0, fetched: 0 };
 
     try {
       await this.runWithJobTimeout(this.processAllPersons(stats), this.env.INGEST_JOB_TIMEOUT_MS);
@@ -92,6 +107,8 @@ export class IngestJobRunner {
       inserted: stats.inserted,
       deduped: stats.deduped,
       errors: stats.errors,
+      skipped: stats.skipped,
+      fetched: stats.fetched,
     });
 
     return {
@@ -128,6 +145,7 @@ export class IngestJobRunner {
         async () => this.fetcher.fetch(entry, fetchContext),
         this.env.INGEST_RETRY_LIMIT,
       );
+      stats.fetched += articles.length;
     } catch (error) {
       stats.errors += 1;
       this.logError('ingest.person.failed', 'PERSON_FETCH_FAILED', error, {
@@ -151,10 +169,36 @@ export class IngestJobRunner {
 
     await runWithConcurrency(articles, ARTICLE_PROCESS_CONCURRENCY, async (candidate) => {
       try {
-        const saveInput = await this.processor.process(candidate, entry, processContext);
-        if (!saveInput) {
+        const processed = await this.processor.process(candidate, entry, processContext);
+        if (!processed) {
+          stats.skipped += 1;
           return;
         }
+
+        const duplicate = await this.persistence.isDuplicateArticle(
+          processed.draft.url,
+          processed.draft.contentHash,
+        );
+        if (duplicate) {
+          stats.deduped += 1;
+          return;
+        }
+
+        const summaryText = await this.summaryService.generateSummary(processed.summaryInput);
+        if (!summaryText || summaryText.trim().length === 0) {
+          throw new SummaryGenerationError('Summary text is empty', {
+            details: {
+              slug: entry.person.slug,
+              url: processed.draft.url,
+            },
+          });
+        }
+
+        const saveInput: SaveArticleInput = {
+          ...processed.draft,
+          summaryText: summaryText.trim(),
+        };
+
         const outcome = await this.persistence.saveArticleResult(saveInput);
         if (outcome.status === 'duplicate') {
           stats.deduped += 1;
@@ -167,6 +211,7 @@ export class IngestJobRunner {
           slug: entry.person.slug,
           url: candidate.url,
         });
+        stats.skipped += 1;
       }
     });
   }

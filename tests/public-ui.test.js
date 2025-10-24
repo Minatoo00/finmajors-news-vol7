@@ -20,7 +20,7 @@ test('formatJstDateTime converts ISO string to JST label', () => {
   assert.equal(formatted, '2025-10-20 12:00 JST');
 });
 
-test('NewsList renders article summary with JST timestamp and load more link', () => {
+test('NewsList renders article summary with JST timestamp and load more button', () => {
   const html = renderToStaticMarkup(
     React.createElement(NewsList, {
       articles: [
@@ -47,7 +47,7 @@ test('NewsList renders article summary with JST timestamp and load more link', (
   assert.match(html, /政策金利は据え置き/);
   assert.match(html, /要約本文/);
   assert.match(html, /2025-10-20 12:00 JST/);
-  assert.match(html, /href="\?cursor=NEXT123"/);
+  assert.match(html, /さらに読み込む/);
 });
 
 test('NewsFilters renders select options with current selection', () => {

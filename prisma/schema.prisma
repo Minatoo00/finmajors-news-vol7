@@ -91,6 +91,8 @@ model IngestJobRun {
   inserted   Int?      @default(0)
   deduped    Int?      @default(0)
   errors     Int?      @default(0)
+  skipped    Int?      @default(0)
+  fetched    Int?      @default(0)
 
   @@index([startedAt])
   @@map("ingest_job_run")

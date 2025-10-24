@@ -124,7 +124,10 @@ export class SummaryServiceImpl implements SummaryService {
 
   private async sendRequest(body: unknown): Promise<string | null> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.requestTimeoutMs).unref?.();
+    const timer = setTimeout(() => controller.abort(), this.requestTimeoutMs);
+    if (typeof timer !== 'number') {
+      timer.unref?.();
+    }
 
     try {
       const response = await this.fetchImpl('https://api.openai.com/v1/responses', {
@@ -148,9 +151,7 @@ export class SummaryServiceImpl implements SummaryService {
       const data = (await response.json()) as OpenAIResponsePayload;
       return this.extractText(data);
     } finally {
-      if (timer) {
-        clearTimeout(timer);
-      }
+      clearTimeout(timer);
     }
   }
 

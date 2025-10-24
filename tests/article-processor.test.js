@@ -9,7 +9,6 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { ArticleProcessorImpl } = require('../src/lib/ingest/article-processor');
-const { SummaryGenerationError } = require('../src/lib/ingest/errors');
 
 const entry = {
   person: {
@@ -26,189 +25,70 @@ const entry = {
   aliases: ['J. Doe'],
 };
 
-test('ArticleProcessor resolves URL, extracts content, and requests summary', async () => {
-  const extractorCalls = [];
-  const summaryCalls = [];
-  const resolveCalls = [];
-  const richContent = `ジョン・ドウは中央銀行の政策について詳しく説明し、市場参加者に慎重な姿勢を促した。 John Doe noted that financial conditions remain tight, and John Doe emphasised the importance of data-dependent decisions in the upcoming meetings.`;
+const baseEnv = { NODE_ENV: 'test', OPENAI_MODEL: 'gpt-4o-mini' };
 
-  const processor = new ArticleProcessorImpl({
-    contentExtractor: async (url) => {
-      extractorCalls.push(url);
-      return {
-        content: richContent,
-      };
-    },
-    resolveUrl: async (url) => {
-      resolveCalls.push(url);
-      return {
-        url: 'https://original.example.com/article',
-        method: 'batchexecute',
-      };
-    },
-    summaryService: {
-      generateSummary: async (input) => {
-        summaryCalls.push(input);
-        return '要約結果';
-      },
-    },
-  });
+const richContent = `ジョン・ドウは中央銀行の政策について詳しく説明し、市場参加者に慎重な姿勢を促した。
+John Doe noted that financial conditions remain tight, and John Doe emphasised the importance of data-dependent decisions in the upcoming meetings.`;
 
-  const candidate = {
-    url: 'https://news.example.com/a',
-    sourceDomain: 'news.example.com',
-    title: 'Headline A',
-    description: 'desc',
-    publishedAt: new Date('2025-10-20T01:00:00Z'),
-    fetchedAt: new Date('2025-10-20T01:05:00Z'),
-  };
-
-  const result = await processor.process(candidate, entry, {
-    person: entry,
-    env: {
-      OPENAI_MODEL: 'gpt-4o-mini',
-    },
-  });
-
-  assert.ok(result);
-  assert.equal(result.url, 'https://original.example.com/article');
-  assert.equal(result.title, candidate.title);
-  assert.equal(result.summaryText, '要約結果');
-  assert.equal(result.content, richContent.replace(/\s+/g, ' ').trim());
-  assert.equal(result.contentHash.length, 64);
-  assert.equal(extractorCalls.length, 1);
-  assert.equal(summaryCalls.length, 1);
-  assert.deepEqual(resolveCalls, [candidate.url]);
-  assert.equal(summaryCalls[0].url, 'https://original.example.com/article');
+const createCandidate = (overrides = {}) => ({
+  url: 'https://news.example.com/a',
+  sourceDomain: 'news.example.com',
+  title: 'Headline A',
+  description: 'desc',
+  publishedAt: new Date('2025-10-20T01:00:00Z'),
+  fetchedAt: new Date('2025-10-20T01:05:00Z'),
+  ...overrides,
 });
 
-test('ArticleProcessor skips when content not available', async () => {
-  const processor = new ArticleProcessorImpl({
-    contentExtractor: async () => null,
-    resolveUrl: async (url) => ({ url, method: 'fallback' }),
-    summaryService: {
-      generateSummary: async () => 'summary',
-    },
+const processorFactory = (overrides = {}) =>
+  new ArticleProcessorImpl({
+    contentExtractor: overrides.contentExtractor ?? (async () => ({ content: richContent })),
+    resolveUrl: overrides.resolveUrl ?? (async (url) => ({ url: 'https://original.example.com/article', method: 'batchexecute' })),
+    logger: overrides.logger,
   });
 
-  const result = await processor.process(
-    {
-      url: 'https://news.example.com/b',
-      sourceDomain: 'news.example.com',
-      title: 'Headline B',
-      description: null,
-      publishedAt: null,
-      fetchedAt: new Date(),
-    },
-    entry,
-    {
-      person: entry,
-      env: { OPENAI_MODEL: 'gpt-4o-mini' },
-    },
-  );
+test('process returns draft and summary input when content and mentions are sufficient', async () => {
+  const processor = processorFactory();
+  const candidate = createCandidate();
 
+  const result = await processor.process(candidate, entry, { person: entry, env: baseEnv });
+
+  assert.ok(result);
+  assert.equal(result.draft.url, 'https://original.example.com/article');
+  assert.equal(result.draft.title, candidate.title);
+  assert.equal(result.draft.content?.includes('中央銀行'), true);
+  assert.equal(result.draft.contentHash?.length, 64);
+  assert.equal(result.draft.summaryText, undefined);
+  assert.equal(result.summaryInput.url, 'https://original.example.com/article');
+  assert.equal(result.summaryInput.persons[0].slug, entry.person.slug);
+});
+
+test('process skips when extractor returns null content', async () => {
+  const processor = processorFactory({
+    contentExtractor: async () => null,
+  });
+
+  const result = await processor.process(createCandidate(), entry, { person: entry, env: baseEnv });
   assert.equal(result, null);
 });
 
-test('ArticleProcessor skips when mention count below threshold', async () => {
-  let summaryCalls = 0;
-  const processor = new ArticleProcessorImpl({
+test('process skips when mention count below threshold', async () => {
+  const processor = processorFactory({
     contentExtractor: async () => ({
       content:
         '世界経済の動向や市場センチメントについて一般的な記述を行い、為替や株式の価格変動に対する分析を述べた記事です。政策当局者の具体的な名前には触れていません。',
     }),
-    resolveUrl: async (url) => ({ url, method: 'fallback' }),
-    summaryService: {
-      generateSummary: async () => {
-        summaryCalls += 1;
-        return 'summary';
-      },
-    },
   });
 
-  const result = await processor.process(
-    {
-      url: 'https://news.example.com/no-mention',
-      sourceDomain: 'news.example.com',
-      title: 'Headline',
-      description: null,
-      publishedAt: new Date(),
-      fetchedAt: new Date(),
-    },
-    entry,
-    {
-      person: entry,
-      env: { OPENAI_MODEL: 'gpt-4o-mini' },
-    },
-  );
-
-  assert.equal(result, null);
-  assert.equal(summaryCalls, 0);
-});
-
-test('ArticleProcessor skips short content with insufficient unique tokens', async () => {
-  const processor = new ArticleProcessorImpl({
-    contentExtractor: async () => ({
-      content: 'ジョン・ドウ、ジョン・ドウ、ジョン。Same name repeated repeatedly John John.',
-    }),
-    resolveUrl: async (url) => ({ url, method: 'fallback' }),
-    summaryService: {
-      generateSummary: async () => 'summary',
-    },
-  });
-
-  const result = await processor.process(
-    {
-      url: 'https://news.example.com/repeated',
-      sourceDomain: 'news.example.com',
-      title: 'Headline',
-      description: null,
-      publishedAt: new Date(),
-      fetchedAt: new Date(),
-    },
-    entry,
-    {
-      person: entry,
-      env: { OPENAI_MODEL: 'gpt-4o-mini' },
-    },
-  );
-
+  const result = await processor.process(createCandidate(), entry, { person: entry, env: baseEnv });
   assert.equal(result, null);
 });
 
-test('ArticleProcessor throws when summary generation returns empty', async () => {
-  const processor = new ArticleProcessorImpl({
-    contentExtractor: async () => ({
-      content:
-        'ジョン・ドウは市場の先行きについて詳細に説明し、ジョン・ドウ自身の見解を繰り返し述べた長文レポートです。金融政策、流動性、信用、金利、リスク、成長、インフレ、雇用、為替、資産、規制、テクノロジーの各テーマと市場参加者の反応について幅広く語りました。John Doe also discussed policy outlook, market stability, liquidity conditions, inflation trajectory, employment trends, currency signals, asset valuations, technology shifts, and regulatory priorities in depth.',
-    }),
-    resolveUrl: async (url) => ({ url, method: 'fallback' }),
-    summaryService: {
-      generateSummary: async () => null,
-    },
-    logger: {
-      info: () => {},
-      error: () => {},
-    },
+test('process skips when content too short or lacks unique tokens', async () => {
+  const processor = processorFactory({
+    contentExtractor: async () => ({ content: 'ジョン・ドウ、ジョン・ドウ、ジョン。Same name repeated repeatedly John John.' }),
   });
 
-  await assert.rejects(
-    () =>
-      processor.process(
-        {
-          url: 'https://news.example.com/c',
-          sourceDomain: 'news.example.com',
-          title: 'Headline C',
-          description: null,
-          publishedAt: new Date(),
-          fetchedAt: new Date(),
-        },
-        entry,
-        {
-          person: entry,
-          env: { OPENAI_MODEL: 'gpt-4o-mini', INGEST_MAX_ARTICLES_PER_PERSON: 8 },
-        },
-      ),
-    SummaryGenerationError,
-  );
+  const result = await processor.process(createCandidate(), entry, { person: entry, env: baseEnv });
+  assert.equal(result, null);
 });

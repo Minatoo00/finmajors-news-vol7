@@ -110,13 +110,15 @@ export class PersistenceService {
         inserted: 0,
         deduped: 0,
         errors: 0,
+        skipped: 0,
+        fetched: 0,
       },
     } as Prisma.IngestJobRunCreateArgs);
   }
 
   async completeJobRun(
     id: bigint,
-    stats: { inserted: number; deduped: number; errors: number },
+    stats: { inserted: number; deduped: number; errors: number; skipped: number; fetched: number },
   ) {
     return this.prisma.ingestJobRun.update({
       where: { id },
@@ -125,6 +127,8 @@ export class PersistenceService {
         inserted: stats.inserted,
         deduped: stats.deduped,
         errors: stats.errors,
+        skipped: stats.skipped,
+        fetched: stats.fetched,
       },
     } as Prisma.IngestJobRunUpdateArgs);
   }
@@ -138,62 +142,95 @@ export class PersistenceService {
       return { status: 'duplicate', articleId: existingId };
     }
 
-    try {
-      return await this.executeWithTransaction(async (client) => {
-        const article = await client.article.create({
-          data: {
-            urlOriginal: input.url,
-            urlNormalized: normalized,
-            sourceDomain: input.sourceDomain,
-            title: input.title,
-            description: input.description ?? undefined,
-            content: input.content ?? undefined,
-            contentHash: input.contentHash ?? undefined,
-            imageUrl: input.imageUrl ?? undefined,
-            publishedAt: input.publishedAt ?? undefined,
-            fetchedAt: input.fetchedAt,
-          },
-        } as Prisma.ArticleCreateArgs);
+    return await this.executeWithTransaction(async (client) => {
+      const createData = {
+        urlOriginal: input.url,
+        urlNormalized: normalized,
+        sourceDomain: input.sourceDomain,
+        title: input.title,
+        description: input.description ?? undefined,
+        content: input.content ?? undefined,
+        contentHash: input.contentHash ?? undefined,
+        imageUrl: input.imageUrl ?? undefined,
+        publishedAt: input.publishedAt ?? undefined,
+        fetchedAt: input.fetchedAt,
+      } satisfies Prisma.ArticleCreateInput;
 
-        if (input.summaryText) {
-          await client.summary.upsert({
-            where: { articleId: article.id },
-            update: { text: input.summaryText },
-            create: {
-              articleId: article.id,
-              text: input.summaryText,
-            },
-          } as Prisma.SummaryUpsertArgs);
+      const result = await client.article.createMany({
+        data: [createData],
+        skipDuplicates: true,
+      } as Prisma.ArticleCreateManyArgs);
+
+      // 重複（既存）
+      if (result.count === 0) {
+        // 競合があっても直後のクエリでコミット済み行が見える（READ COMMITTED）前提で取得
+        const byUrl = await client.article.findUnique({
+          where: { urlNormalized: normalized },
+          select: { id: true },
+        } as Prisma.ArticleFindUniqueArgs);
+
+        if (byUrl) {
+          return { status: 'duplicate', articleId: byUrl.id as unknown as bigint };
         }
 
-        await client.articlePerson.deleteMany({
-          where: { articleId: article.id },
-        } as Prisma.ArticlePersonDeleteManyArgs);
-
-        if (input.persons.length > 0) {
-          await client.articlePerson.createMany({
-            data: input.persons.map((person) => ({
-              articleId: article.id,
-              personId: person.id,
-            })),
-            skipDuplicates: true,
-          } as Prisma.ArticlePersonCreateManyArgs);
+        if (input.contentHash) {
+          const byHash = await client.article.findUnique({
+            where: { contentHash: input.contentHash },
+            select: { id: true },
+          } as Prisma.ArticleFindUniqueArgs);
+          if (byHash) {
+            return { status: 'duplicate', articleId: byHash.id as unknown as bigint };
+          }
         }
 
-        return { status: 'inserted', articleId: article.id as unknown as bigint };
-      });
-    } catch (error) {
-      if (this.isUniqueConstraintError(error)) {
-        const duplicateId = await this.findExistingArticleId(
-          normalized,
-          input.contentHash,
-        );
-        if (duplicateId) {
-          return { status: 'duplicate', articleId: duplicateId };
+        // 念のためのフォールバック（極めて稀）
+        const fallbackId = await this.findExistingArticleId(normalized, input.contentHash);
+        if (fallbackId) {
+          return { status: 'duplicate', articleId: fallbackId };
         }
+
+        throw new Error('Duplicate detected but existing article not found');
       }
-      throw error;
-    }
+
+      // 新規作成（createMany は行を返さないため、ID を取得）
+      const created = await client.article.findUnique({
+        where: { urlNormalized: normalized },
+        select: { id: true },
+      } as Prisma.ArticleFindUniqueArgs);
+
+      if (!created) {
+        throw new Error('Article created but not found by urlNormalized');
+      }
+
+      const articleId = created.id as unknown as bigint;
+
+      if (input.summaryText) {
+        await client.summary.upsert({
+          where: { articleId: created.id },
+          update: { text: input.summaryText },
+          create: {
+            articleId: created.id,
+            text: input.summaryText,
+          },
+        } as Prisma.SummaryUpsertArgs);
+      }
+
+      await client.articlePerson.deleteMany({
+        where: { articleId: created.id },
+      } as Prisma.ArticlePersonDeleteManyArgs);
+
+      if (input.persons.length > 0) {
+        await client.articlePerson.createMany({
+          data: input.persons.map((person) => ({
+            articleId: created.id,
+            personId: person.id,
+          })),
+          skipDuplicates: true,
+        } as Prisma.ArticlePersonCreateManyArgs);
+      }
+
+      return { status: 'inserted', articleId };
+    });
   }
 
   async isDuplicateArticle(url: string, contentHash?: string | null): Promise<{ status: 'duplicate'; articleId: bigint } | null> {

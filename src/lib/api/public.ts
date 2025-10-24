@@ -123,14 +123,14 @@ export function parseArticlesListQuery(
 }
 
 export interface ArticlesCursorPayload {
-  publishedAt: Date;
+  publishedAt: Date | null;
   articleId: bigint;
 }
 
 export function encodeArticlesCursor(payload: ArticlesCursorPayload): string {
   const encoded = Buffer.from(
     JSON.stringify({
-      publishedAt: payload.publishedAt.toISOString(),
+      publishedAt: payload.publishedAt ? payload.publishedAt.toISOString() : null,
       articleId: payload.articleId.toString(),
     }),
     'utf8',
@@ -141,11 +141,11 @@ export function encodeArticlesCursor(payload: ArticlesCursorPayload): string {
 export function decodeArticlesCursor(cursor: string): ArticlesCursorPayload {
   const decoded = Buffer.from(cursor, 'base64url').toString('utf8');
   const data = JSON.parse(decoded) as {
-    publishedAt: string;
+    publishedAt: string | null;
     articleId: string;
   };
   return {
-    publishedAt: new Date(data.publishedAt),
+    publishedAt: data.publishedAt ? new Date(data.publishedAt) : null,
     articleId: BigInt(data.articleId),
   };
 }
@@ -192,6 +192,22 @@ export async function buildPersonsResponse(
 
 function buildCursorFilter(cursor: string): Prisma.ArticleWhereInput {
   const payload = decodeArticlesCursor(cursor);
+  if (!payload.publishedAt) {
+    return {
+      AND: [
+        {
+          publishedAt: {
+            equals: null,
+          },
+        },
+        {
+          id: {
+            lt: payload.articleId,
+          },
+        },
+      ],
+    } satisfies Prisma.ArticleWhereInput;
+  }
   return {
     OR: [
       {
@@ -296,12 +312,10 @@ export async function buildArticlesListResponse(
   let nextCursor: string | null = null;
   if (hasMore) {
     const last = sliced[sliced.length - 1];
-    if (last.publishedAt) {
-      nextCursor = encodeArticlesCursor({
-        publishedAt: last.publishedAt,
-        articleId: last.id as unknown as bigint,
-      });
-    }
+    nextCursor = encodeArticlesCursor({
+      publishedAt: last.publishedAt ?? null,
+      articleId: last.id as unknown as bigint,
+    });
   }
 
   return {

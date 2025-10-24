@@ -1,12 +1,11 @@
 import crypto from 'node:crypto';
-import type { PersonDictionaryEntry, SaveArticleInput } from '../persistence/service';
-import { IngestError, SummaryGenerationError } from './errors';
+import type { PersonDictionaryEntry, SaveArticleDraftInput } from '../persistence/service';
 import type {
   ArticleProcessor,
   IngestLogger,
   ProcessContext,
   RssArticleCandidate,
-  SummaryService,
+  ProcessedArticle,
 } from './types';
 import { resolveOriginalUrl, type ResolveResult } from '../gn';
 
@@ -23,7 +22,6 @@ type ContentExtractorResult =
 type ContentExtractor = (url: string) => Promise<ContentExtractorResult>;
 
 interface ArticleProcessorOptions {
-  summaryService: SummaryService;
   contentExtractor: ContentExtractor;
   resolveUrl?: (gnUrl: string) => Promise<ResolveResult>;
   logger?: IngestLogger;
@@ -52,8 +50,6 @@ function formatMeta(meta?: Record<string, unknown>) {
 }
 
 export class ArticleProcessorImpl implements ArticleProcessor {
-  private readonly summaryService: SummaryService;
-
   private readonly contentExtractor: ContentExtractor;
 
   private readonly resolveUrl: (url: string) => Promise<ResolveResult>;
@@ -71,7 +67,6 @@ export class ArticleProcessorImpl implements ArticleProcessor {
   private static readonly MINIMUM_CONTENT_LENGTH = 80;
 
   constructor(options: ArticleProcessorOptions) {
-    this.summaryService = options.summaryService;
     this.contentExtractor = options.contentExtractor;
     this.resolveUrl = options.resolveUrl ?? resolveOriginalUrl;
     this.logger = options.logger ?? defaultLogger;
@@ -83,7 +78,7 @@ export class ArticleProcessorImpl implements ArticleProcessor {
     candidate: RssArticleCandidate,
     person: PersonDictionaryEntry,
     context: ProcessContext,
-  ): Promise<SaveArticleInput | null> {
+  ): Promise<ProcessedArticle | null> {
     const { env } = context;
 
     const resolution = await this.resolveUrl(candidate.url);
@@ -120,60 +115,9 @@ export class ArticleProcessorImpl implements ArticleProcessor {
 
     const contentHash = this.computeContentHash(normalizedText);
 
-    let summary: string | null = null;
-    try {
-      summary = await this.summaryService.generateSummary({
-        title: candidate.title,
-        content: cleanedText,
-        url: resolvedUrl,
-        persons: [
-          {
-            slug: person.person.slug,
-            nameJp: person.person.nameJp,
-            nameEn: person.person.nameEn,
-            institutionCode: person.person.institutionCode,
-          },
-        ],
-      });
-    } catch (error) {
-      const ingestError =
-        error instanceof IngestError
-          ? error
-          : new SummaryGenerationError(
-              error instanceof Error ? error.message : 'Summary generation failed',
-              { cause: error instanceof Error ? error : undefined },
-            );
-      this.logger.error('ingest.summary.failed', {
-        code: ingestError.code,
-        slug: person.person.slug,
-        url: resolvedUrl,
-        error: ingestError.message,
-        stack: ingestError.stack,
-        environment: env.NODE_ENV,
-      });
-      throw ingestError;
-    }
-
-    if (!summary || summary.trim().length === 0) {
-      const emptyError = new SummaryGenerationError('Summary text is empty', {
-        details: {
-          slug: person.person.slug,
-          url: resolvedUrl,
-        },
-      });
-      this.logger.error('ingest.summary.unavailable', {
-        code: emptyError.code,
-        slug: person.person.slug,
-        url: resolvedUrl,
-        error: emptyError.message,
-        environment: env.NODE_ENV,
-      });
-      throw emptyError;
-    }
-
     const fetchedAt = candidate.fetchedAt ?? this.clock();
 
-    return {
+    const draft: SaveArticleDraftInput = {
       url: resolvedUrl,
       sourceDomain: this.toSourceDomain(resolvedUrl, candidate.sourceDomain),
       title: candidate.title,
@@ -189,8 +133,23 @@ export class ArticleProcessorImpl implements ArticleProcessor {
           slug: person.person.slug,
         },
       ],
-      summaryText: summary,
     };
+
+    const summaryInput = {
+      title: candidate.title,
+      content: cleanedText,
+      url: resolvedUrl,
+      persons: [
+        {
+          slug: person.person.slug,
+          nameJp: person.person.nameJp,
+          nameEn: person.person.nameEn,
+          institutionCode: person.person.institutionCode,
+        },
+      ],
+    };
+
+    return { draft, summaryInput };
   }
 
   private cleanContent(input: string): string {

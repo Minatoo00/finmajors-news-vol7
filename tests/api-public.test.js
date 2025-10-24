@@ -52,7 +52,19 @@ test('cursor encoding and decoding round-trips', () => {
   const decoded = decodeArticlesCursor(encoded);
 
   assert.equal(decoded.articleId, cursor.articleId);
-  assert.equal(decoded.publishedAt.toISOString(), cursor.publishedAt.toISOString());
+  assert.equal(decoded.publishedAt?.toISOString(), cursor.publishedAt.toISOString());
+});
+
+test('cursor encoding and decoding handles null publishedAt', () => {
+  const cursor = {
+    publishedAt: null,
+    articleId: BigInt(24),
+  };
+  const encoded = encodeArticlesCursor(cursor);
+  const decoded = decodeArticlesCursor(encoded);
+
+  assert.equal(decoded.articleId, cursor.articleId);
+  assert.equal(decoded.publishedAt, null);
 });
 
 test('buildPersonsResponse maps active persons to API DTO', async () => {
