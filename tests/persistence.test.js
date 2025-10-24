@@ -10,6 +10,7 @@ const assert = require('node:assert/strict');
 
 const { normalizeUrl } = require('../src/lib/persistence/url');
 const { PersistenceService } = require('../src/lib/persistence/service');
+const { Prisma } = require('@prisma/client');
 
 test('normalizeUrl removes tracking parameters and trailing slash', () => {
   const normalized = normalizeUrl('https://example.com/path/?utm_source=test&utm_campaign=abc');
@@ -80,6 +81,7 @@ test('recordJobStart and completeJobRun delegate to Prisma ingest_job_run model'
 test('saveArticleResult skips duplicates based on normalized URL', async () => {
   const calls = { findUnique: [], create: [], upsert: [], link: [] };
   const mockPrisma = {
+    $transaction: async (callback) => callback(transactionClient),
     article: {
       findUnique: async (args) => {
         calls.findUnique.push(args);
@@ -108,6 +110,12 @@ test('saveArticleResult skips duplicates based on normalized URL', async () => {
     },
   };
 
+  const transactionClient = {
+    article: mockPrisma.article,
+    summary: mockPrisma.summary,
+    articlePerson: mockPrisma.articlePerson,
+  };
+
   const service = new PersistenceService(mockPrisma);
 
   const deduped = await service.saveArticleResult({
@@ -123,7 +131,7 @@ test('saveArticleResult skips duplicates based on normalized URL', async () => {
   });
   assert.equal(deduped.status, 'duplicate');
 
-  const created = await service.saveArticleResult({
+const created = await service.saveArticleResult({
     url: 'https://example.com/b',
     sourceDomain: 'example.com',
     title: 'Title B',
@@ -135,7 +143,64 @@ test('saveArticleResult skips duplicates based on normalized URL', async () => {
     summaryText: 'summary b',
   });
   assert.equal(created.status, 'inserted');
+  assert.equal(calls.findUnique.length, 2);
   assert.equal(calls.create.length, 1);
   assert.equal(calls.upsert.length, 1);
   assert.equal(calls.link.length, 1);
+});
+
+test('saveArticleResult handles unique constraint race conditions', async () => {
+  let createCalled = false;
+  const mockPrisma = {
+    $transaction: async (callback) => callback(transactionClient),
+    article: {
+      findUnique: async (args) => {
+        if (args.where.urlNormalized === 'https://example.com/race') {
+          return createCalled
+            ? { id: BigInt(10), urlNormalized: 'https://example.com/race' }
+            : null;
+        }
+        return null;
+      },
+      create: async () => {
+        createCalled = true;
+        const error = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+          clientVersion: 'test',
+          code: 'P2002',
+        });
+        throw error;
+      },
+    },
+    summary: {
+      upsert: async () => assert.fail('should not upsert summary when duplicate'),
+    },
+    articlePerson: {
+      createMany: async () => assert.fail('should not link persons when duplicate'),
+      deleteMany: async () => assert.fail('should not unlink persons when duplicate'),
+    },
+  };
+
+  const transactionClient = {
+    article: mockPrisma.article,
+    summary: mockPrisma.summary,
+    articlePerson: mockPrisma.articlePerson,
+  };
+
+  const service = new PersistenceService(mockPrisma);
+
+  const outcome = await service.saveArticleResult({
+    url: 'https://example.com/race',
+    sourceDomain: 'example.com',
+    title: 'Race Condition',
+    description: null,
+    publishedAt: new Date('2025-01-01T03:00:00Z'),
+    fetchedAt: new Date('2025-01-01T03:05:00Z'),
+    persons: [{ id: BigInt(1), slug: 'john-doe' }],
+    content: 'race-body',
+    summaryText: 'race summary',
+  });
+
+  assert.equal(outcome.status, 'duplicate');
+  assert.equal(outcome.articleId, BigInt(10));
+  assert.ok(createCalled);
 });

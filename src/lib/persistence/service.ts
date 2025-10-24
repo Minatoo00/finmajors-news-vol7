@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 import { normalizeUrl } from './url';
 
 type PrismaLike = Pick<
@@ -53,6 +53,8 @@ export interface SaveArticleInput {
   persons: Array<{ id: bigint; slug: string }>;
   summaryText: string | null;
 }
+
+export type SaveArticleDraftInput = Omit<SaveArticleInput, 'summaryText'>;
 
 export type SaveArticleOutcome =
   | { status: 'duplicate'; articleId: bigint }
@@ -130,66 +132,80 @@ export class PersistenceService {
   async saveArticleResult(input: SaveArticleInput): Promise<SaveArticleOutcome> {
     const normalized = normalizeUrl(input.url);
 
-    const existingByUrl = await this.prisma.article.findUnique({
-      where: { urlNormalized: normalized },
-    } as Prisma.ArticleFindUniqueArgs);
+    const existingId = await this.findExistingArticleId(normalized, input.contentHash);
 
-    if (existingByUrl) {
-      return { status: 'duplicate', articleId: existingByUrl.id as unknown as bigint };
+    if (existingId) {
+      return { status: 'duplicate', articleId: existingId };
     }
 
-    if (input.contentHash) {
-      const existingByHash = await this.prisma.article.findUnique({
-        where: { contentHash: input.contentHash },
-      } as Prisma.ArticleFindUniqueArgs);
-      if (existingByHash) {
-        return { status: 'duplicate', articleId: existingByHash.id as unknown as bigint };
-      }
-    }
-
-    return this.executeWithTransaction(async (client) => {
-      const article = await client.article.create({
-        data: {
-          urlOriginal: input.url,
-          urlNormalized: normalized,
-          sourceDomain: input.sourceDomain,
-          title: input.title,
-          description: input.description ?? undefined,
-          content: input.content ?? undefined,
-          contentHash: input.contentHash ?? undefined,
-          imageUrl: input.imageUrl ?? undefined,
-          publishedAt: input.publishedAt ?? undefined,
-          fetchedAt: input.fetchedAt,
-        },
-      } as Prisma.ArticleCreateArgs);
-
-      if (input.summaryText) {
-        await client.summary.upsert({
-          where: { articleId: article.id },
-          update: { text: input.summaryText },
-          create: {
-            articleId: article.id,
-            text: input.summaryText,
+    try {
+      return await this.executeWithTransaction(async (client) => {
+        const article = await client.article.create({
+          data: {
+            urlOriginal: input.url,
+            urlNormalized: normalized,
+            sourceDomain: input.sourceDomain,
+            title: input.title,
+            description: input.description ?? undefined,
+            content: input.content ?? undefined,
+            contentHash: input.contentHash ?? undefined,
+            imageUrl: input.imageUrl ?? undefined,
+            publishedAt: input.publishedAt ?? undefined,
+            fetchedAt: input.fetchedAt,
           },
-        } as Prisma.SummaryUpsertArgs);
+        } as Prisma.ArticleCreateArgs);
+
+        if (input.summaryText) {
+          await client.summary.upsert({
+            where: { articleId: article.id },
+            update: { text: input.summaryText },
+            create: {
+              articleId: article.id,
+              text: input.summaryText,
+            },
+          } as Prisma.SummaryUpsertArgs);
+        }
+
+        await client.articlePerson.deleteMany({
+          where: { articleId: article.id },
+        } as Prisma.ArticlePersonDeleteManyArgs);
+
+        if (input.persons.length > 0) {
+          await client.articlePerson.createMany({
+            data: input.persons.map((person) => ({
+              articleId: article.id,
+              personId: person.id,
+            })),
+            skipDuplicates: true,
+          } as Prisma.ArticlePersonCreateManyArgs);
+        }
+
+        return { status: 'inserted', articleId: article.id as unknown as bigint };
+      });
+    } catch (error) {
+      if (this.isUniqueConstraintError(error)) {
+        const duplicateId = await this.findExistingArticleId(
+          normalized,
+          input.contentHash,
+        );
+        if (duplicateId) {
+          return { status: 'duplicate', articleId: duplicateId };
+        }
       }
+      throw error;
+    }
+  }
 
-      await client.articlePerson.deleteMany({
-        where: { articleId: article.id },
-      } as Prisma.ArticlePersonDeleteManyArgs);
+  async isDuplicateArticle(url: string, contentHash?: string | null): Promise<{ status: 'duplicate'; articleId: bigint } | null> {
+    const normalized = url.startsWith('http') ? normalizeUrl(url) : url;
 
-      if (input.persons.length > 0) {
-        await client.articlePerson.createMany({
-          data: input.persons.map((person) => ({
-            articleId: article.id,
-            personId: person.id,
-          })),
-          skipDuplicates: true,
-        } as Prisma.ArticlePersonCreateManyArgs);
-      }
+    const existingId = await this.findExistingArticleId(normalized, contentHash);
 
-      return { status: 'inserted', articleId: article.id as unknown as bigint };
-    });
+    if (existingId) {
+      return { status: 'duplicate', articleId: existingId };
+    }
+
+    return null;
   }
 
   private async executeWithTransaction<T>(
@@ -201,5 +217,41 @@ export class PersistenceService {
       );
     }
     return callback(this.prisma as unknown as TransactionClient);
+  }
+
+  private async findExistingArticleId(
+    normalizedUrl: string,
+    contentHash?: string | null,
+  ): Promise<bigint | null> {
+    const existingByUrl = await this.prisma.article.findUnique({
+      where: { urlNormalized: normalizedUrl },
+      select: { id: true },
+    } as Prisma.ArticleFindUniqueArgs);
+
+    if (existingByUrl) {
+      return existingByUrl.id as unknown as bigint;
+    }
+
+    if (contentHash) {
+      const existingByHash = await this.prisma.article.findUnique({
+        where: { contentHash },
+        select: { id: true },
+      } as Prisma.ArticleFindUniqueArgs);
+
+      if (existingByHash) {
+        return existingByHash.id as unknown as bigint;
+      }
+    }
+
+    return null;
+  }
+
+  private isUniqueConstraintError(
+    error: unknown,
+  ): error is Prisma.PrismaClientKnownRequestError {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002'
+    );
   }
 }
